@@ -283,6 +283,13 @@ def test_unavailable_when_idle_shows_unavailable_and_recovers():
 LOCAL = timezone(timedelta(hours=1))
 
 
+def test_merge_imported_drops_impossible_days():
+    days: dict = {}
+    e.merge_imported(days, {"2030-10-19": {"kwh": 845019.2, "cycles": 1}, "2030-10-18": {"kwh": 3.0}}, 0.3, date(2030, 10, 22))
+    assert days["2030-10-19"]["kwh"] == 0.0 and days["2030-10-19"]["eur"] == 0.0 and days["2030-10-19"]["cycles"] == 1
+    assert days["2030-10-18"]["kwh"] == 3.0
+
+
 def test_merge_imported_never_touches_measured_days_and_is_idempotent():
     days: dict = {}
     e.add_to_day(days, date(2030, 10, 20), kwh=1.0, eur=0.3, cycles=1)             # misurato da qui

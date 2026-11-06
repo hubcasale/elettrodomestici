@@ -567,6 +567,7 @@ def trim_cycles(cycles: list[Cycle]) -> list[Cycle]:
 
 # ---------------------------------------------------------------------- importazione dello storico
 IMPORT_FLAG = "imp"
+MAX_IMPORT_DAY_KWH = 100.0   # una presa da 16 A fa al massimo ~88 kWh al giorno: oltre è un'anomalia del contatore
 
 
 def merge_imported(days: dict[str, dict[str, float]], imported: dict[str, dict[str, float]], price: float, before: date) -> int:
@@ -586,6 +587,8 @@ def merge_imported(days: dict[str, dict[str, float]], imported: dict[str, dict[s
         if cur is not None and not cur.get(IMPORT_FLAG):
             continue
         kwh = max(0.0, float(v.get("kwh", 0.0)))
+        if kwh > MAX_IMPORT_DAY_KWH:
+            kwh = 0.0
         days[key] = {"kwh": kwh, "eur": kwh * price, "cycles": max(0, int(v.get("cycles", 0))), "sec": max(0, int(v.get("sec", 0))), IMPORT_FLAG: 1}
         written += 1
     return written

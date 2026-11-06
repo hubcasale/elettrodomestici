@@ -146,7 +146,7 @@ export class ElettroSettingsDialog extends LitElement {
     }
     this._setImp(a.id, { busy: true, msg: "", err: false });
     try {
-      const r = await this.hass.callWS<{ days_written: number; energy_days: number; kwh: number; cycles: number; baseline: number | null; runtime_days: number }>({
+      const r = await this.hass.callWS<{ days_written: number; energy_days: number; kwh: number; cycles: number; baseline: number | null; runtime_days: number; skipped_days?: number }>({
         type: "elettrodomestici/import_history", entry_id: this.info.entry_id, key: a.id, days,
         ...(s.energy.trim() ? { energy_entity: s.energy.trim() } : {}), ...(s.counter.trim() ? { counter_entity: s.counter.trim() } : {}),
         ...(s.status.trim() ? { status_entity: s.status.trim() } : {}), ...(price !== undefined ? { price } : {}),
@@ -155,6 +155,7 @@ export class ElettroSettingsDialog extends LitElement {
       if (r.energy_days) parts.push(`${fmt(r.kwh, 1)} kWh`);
       if (r.cycles || r.baseline) parts.push(`${fmt(r.cycles + (r.baseline ?? 0))} cicli (${fmt(r.baseline ?? 0)} precedenti al recorder, solo nel totale)`);
       if (r.runtime_days) parts.push(`funzionamento di ${r.runtime_days} giorni`);
+      if (r.skipped_days) parts.push(`${r.skipped_days} giorni scartati (valori impossibili del contatore)`);
       this._setImp(a.id, { busy: false, msg: `${parts.join(" · ")}.`, err: false });
       this.dispatchEvent(new CustomEvent("saved"));
     } catch (e) {

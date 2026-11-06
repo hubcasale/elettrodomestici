@@ -223,7 +223,7 @@ async def test_import_history_from_old_package(hass: HomeAssistant, hass_ws_clie
     await hass.config.async_set_time_zone("Europe/Rome")
     entry = await _setup(hass, [{**APPLIANCES[0], "maint_cycles": 30}, APPLIANCES[1]])
     today = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    d1, d2 = today - timedelta(days=2), today - timedelta(days=1)
+    d0, d1, d2 = today - timedelta(days=3), today - timedelta(days=2), today - timedelta(days=1)
 
     class FakeRecorder:
         async def async_add_executor_job(self, func, *args):
@@ -234,7 +234,7 @@ async def test_import_history_from_old_package(hass: HomeAssistant, hass_ws_clie
 
     def fake_stats(hass_, start, end, ids, period, units, types):
         asked.update(ids=ids, period=period, units=units, types=types)
-        return {"sensor.vecchio_contatore": [{"start": dt_util.as_utc(d1).timestamp(), "change": 1.5}, {"start": dt_util.as_utc(d2).timestamp(), "change": 0.8}]}
+        return {"sensor.vecchio_contatore": [{"start": dt_util.as_utc(d0).timestamp(), "change": 845019.2}, {"start": dt_util.as_utc(d1).timestamp(), "change": 1.5}, {"start": dt_util.as_utc(d2).timestamp(), "change": 0.8}]}
 
     def fake_states(hass_, start, end, ids, *a):
         def st(when, value):
@@ -256,7 +256,7 @@ async def test_import_history_from_old_package(hass: HomeAssistant, hass_ws_clie
     res = await client.receive_json()
     assert res["success"], res
     r = res["result"]
-    assert r["days_written"] == 2 and r["energy_days"] == 2 and r["kwh"] == 2.3 and r["cycles"] == 2 and r["baseline"] == 43
+    assert r["days_written"] == 3 and r["energy_days"] == 3 and r["skipped_days"] == 1 and r["kwh"] == 2.3 and r["cycles"] == 2 and r["baseline"] == 43
     assert asked["period"] == "day" and asked["units"] == {"energy": "kWh"} and asked["ids"] == {"sensor.vecchio_contatore"}
 
     ctl = hass.data[DOMAIN][entry.entry_id]

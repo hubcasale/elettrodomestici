@@ -84,7 +84,7 @@ const hass = { states, services:{notify:{mobile_app_pixel:{},casa:{}}}, callServ
   if (m.type==="elettrodomestici/info") return info;
   if (m.type==="elettrodomestici/update") return m;
   if (m.type==="elettrodomestici/action") return {ok:true};
-  if (m.type==="elettrodomestici/import_history") return {days_written:412, energy_days:640, kwh:318.4, cycle_days:8, cycles:11, baseline:187, runtime_days:8};
+  if (m.type==="elettrodomestici/import_history") return {days_written:412, energy_days:640, skipped_days:3, kwh:318.4, cycle_days:8, cycles:11, baseline:187, runtime_days:8};
   if (m.type==="elettrodomestici/stats") { const out={}; appliances.forEach((a)=>{ out[a.key]=stats; }); return out; }
   if (m.type==="history/history_during_period") return history(m.entity_ids, Date.parse(m.start_time), Date.parse(m.end_time));
   throw new Error("non gestito "+m.type); } };

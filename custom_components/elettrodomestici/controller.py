@@ -338,7 +338,7 @@ class ElettroController:
             recorder = get_instance(self.hass)
         except KeyError as err:
             raise ValueError("Il recorder di Home Assistant non è attivo: senza non c'è uno storico da importare") from err
-        result: dict[str, Any] = {"energy_days": 0, "kwh": 0.0, "cycle_days": 0, "cycles": 0, "baseline": None, "runtime_days": 0}
+        result: dict[str, Any] = {"energy_days": 0, "kwh": 0.0, "cycle_days": 0, "cycles": 0, "baseline": None, "runtime_days": 0, "skipped_days": 0}
 
         if energy_entity:
             rows = (
@@ -352,6 +352,10 @@ class ElettroController:
                 if change is None or change < 0:
                     continue
                 k = dt_util.as_local(dt_util.utc_from_timestamp(r["start"])).date().isoformat()
+                if change > eng.MAX_IMPORT_DAY_KWH:       # picco del contatore della presa: non è un consumo reale
+                    result["skipped_days"] += 1
+                    imported.setdefault(k, {})["kwh"] = 0.0      # il giorno resta, ma senza energia (sostituisce un eventuale import precedente)
+                    continue
                 imported.setdefault(k, {})["kwh"] = imported.get(k, {}).get("kwh", 0.0) + float(change)
                 result["kwh"] += float(change)
             result["energy_days"] = len(rows)
