@@ -32,6 +32,7 @@ Il frigorifero conta i cicli del compressore, il forno avvisa se resta acceso a 
 type: custom:elettrodomestici-card
 # facoltativi:
 title: Elettrodomestici
+columns: 2                       # colonne delle tessere (1-8); 0 o assente = automatico
 appliances: [lavatrice, forno]   # solo questi (id); senza l'elenco si vedono tutti
 header: false                    # senza titolo e ingranaggio
 ```

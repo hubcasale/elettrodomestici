@@ -213,6 +213,16 @@ export function tileModel(app: ApplianceInfo, states: Record<string, HassState>,
   };
 }
 
+/** Colonne della griglia: un numero da 1 a 8 le fissa; 0, vuoto o altro = automatico (tessere larghe almeno 300 px). */
+export function gridColumns(value: unknown): number | null {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 8) : null;
+}
+export function gridTemplate(value: unknown): string {
+  const n = gridColumns(value);
+  return n === null ? "repeat(auto-fill, minmax(min(300px, 100%), 1fr))" : `repeat(${n}, minmax(0, 1fr))`;
+}
+
 export function summaryText(tiles: TileModel[]): string {
   if (tiles.length === 0) return "Nessun elettrodomestico: aggiungine uno dalle preferenze.";
   const running = tiles.filter((t) => t.state === "in_funzione");

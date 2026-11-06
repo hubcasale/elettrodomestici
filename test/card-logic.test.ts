@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   appliancesError, energySensors, extraValue, fmt, fmtEur, fmtKwh, formatDuration, formatHours, liveSnapshot, metricText, newAppliance,
-  counters, guessOldPackage, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
+  counters, gridColumns, gridTemplate, guessOldPackage, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
 } from "../src/card-logic";
 import { applianceSvg } from "../src/appliance-svg";
 import type { ApplianceInfo, HassState, TypeDefaults } from "../src/types";
@@ -184,4 +184,15 @@ test("riconosce il contatore e il sensore di stato del vecchio pacchetto", () =>
   assert.deepEqual(guessOldPackage(states, "lavastoviglie"), { counter: "counter.cicli_lavastoviglie", status: "binary_sensor.dishwasher_status" });
   assert.deepEqual(guessOldPackage(states, "forno"), { counter: "", status: "" });
   assert.deepEqual(counters(states).map((c) => c.id).sort(), ["counter.altro", "counter.cicli_lavaggio_lavatrice", "counter.cicli_lavastoviglie"]);
+});
+
+test("colonne della griglia: da 1 a 8, altrimenti automatico", () => {
+  assert.equal(gridColumns(3), 3);
+  assert.equal(gridColumns("2"), 2);
+  assert.equal(gridColumns(20), 8);
+  assert.equal(gridColumns(0), null);
+  assert.equal(gridColumns(undefined), null);
+  assert.equal(gridColumns("boh"), null);
+  assert.equal(gridTemplate(2), "repeat(2, minmax(0, 1fr))");
+  assert.match(gridTemplate(0), /auto-fill/);
 });

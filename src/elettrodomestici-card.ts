@@ -2,7 +2,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { applianceSvg } from "./appliance-svg";
-import { fmt, fmtEur, fmtKwh, fmtWatt, summaryText, tileModel, type TileModel } from "./card-logic";
+import { fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, summaryText, tileModel, type TileModel } from "./card-logic";
 import "./settings-dialog";
 import "./stats-dialog";
 import "./charts-dialog";
@@ -14,6 +14,8 @@ interface CardConfig {
   entry_id?: string;
   /** mostra solo questi elettrodomestici (id); senza l'elenco si vedono tutti */
   appliances?: string[];
+  /** numero di colonne delle tessere (1-8); 0 o assente = automatico */
+  columns?: number;
   /** false = senza titolo e pulsanti (per inserire un elettrodomestico dentro un'altra scheda) */
   header?: boolean;
 }
@@ -45,6 +47,17 @@ export class ElettrodomesticiCard extends LitElement {
   }
   static getStubConfig(): CardConfig {
     return { type: "custom:elettrodomestici-card" };
+  }
+
+  /** Editor visuale della scheda (titolo e colonne). */
+  static getConfigForm() {
+    return {
+      schema: [
+        { name: "title", selector: { text: {} } },
+        { name: "columns", selector: { number: { min: 0, max: 8, step: 1, mode: "box" } } },
+      ],
+      computeLabel: (s: { name: string }) => (s.name === "title" ? "Titolo" : s.name === "columns" ? "Colonne (0 = automatico)" : s.name),
+    };
   }
 
   connectedCallback(): void {
@@ -142,7 +155,7 @@ export class ElettrodomesticiCard extends LitElement {
     const wanted = Array.isArray(this._config.appliances) ? this._config.appliances : null;
     const shown = wanted ? this._info.appliances.filter((a) => wanted.includes(a.key)) : this._info.appliances;
     const tiles = shown.map((a) => tileModel(a, this.hass.states, this._info?.types, this._now));
-    const grid = html`<div class="grid">${tiles.map((t) => this._tile(t))}</div>`;
+    const grid = html`<div class="grid" style=${`grid-template-columns:${gridTemplate(this._config.columns)}`}>${tiles.map((t) => this._tile(t))}</div>`;
     if (this._config.header === false) return html`<ha-card><div class="pad compact">${grid}</div></ha-card>`;
     return html`
       <ha-card>
@@ -174,7 +187,7 @@ export class ElettrodomesticiCard extends LitElement {
     .ib { flex: none; width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--divider-color, #ccc); background: var(--secondary-background-color, #f4f4f4); color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     ha-icon { --mdc-icon-size: 20px; }
     .empty { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 64px; justify-content: center; border: 2px dashed var(--divider-color, #ccc); border-radius: 14px; background: transparent; color: var(--secondary-text-color, #727272); cursor: pointer; font-size: 0.95rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; align-items: start; }
+    .grid { display: grid; gap: 12px; align-items: start; }
     .tile { padding: 10px 12px 12px; border-radius: 16px; background: var(--secondary-background-color, #f2f2f2); border: 1px solid transparent; }
     .tile.run { border-color: rgba(245, 158, 11, 0.7); background: rgba(245, 158, 11, 0.1); }
     .tile.done { border-color: rgba(22, 163, 74, 0.7); background: rgba(22, 163, 74, 0.1); }
@@ -219,4 +232,4 @@ window.customCards.push({
 });
 
 // eslint-disable-next-line no-console
-console.info("%c ELETTRODOMESTICI %c v0.1.0 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
+console.info("%c ELETTRODOMESTICI %c v0.2.0 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
