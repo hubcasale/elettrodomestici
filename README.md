@@ -1,8 +1,7 @@
 # Elettrodomestici
 
 Integrazione per Home Assistant (HACS) e scheda Lovelace per **lavatrice, lavastoviglie, asciugatrice, forno, frigorifero e microonde**.
-Sostituisce i vecchi pacchetti `elettrodomestici_2023` (non più aggiornati): l'elettrodomestico non va acceso né spento da Home Assistant,
-la presa intelligente serve **solo a misurare la potenza**.
+L'elettrodomestico non va acceso né spento da Home Assistant: la presa intelligente serve **solo a misurare la potenza**.
 
 ## Come funziona
 
@@ -71,4 +70,4 @@ npm run build:dev      # poi aprire dev/index.html con un server statico (stati 
 
 Parametri della pagina di prova: `?theme=dark`, `?only=lavatrice,forno`, `?open=elettro-stats-dialog|elettro-charts-dialog|elettro-settings-dialog&key=lavatrice`.
 
-Licenza MIT. Ispirato al progetto `elettrodomestici_2023` di jumping2000 (idea della macchina a stati dalla potenza); il codice è nuovo.
+Licenza MIT.

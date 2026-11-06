@@ -308,7 +308,7 @@ const OLD_WORDS: Record<ApplianceType, RegExp> = {
   frigorifero: /frigo|fridge/,
   microonde: /micro/,
 };
-/** Il contatore dei cicli e il sensore di stato del vecchio pacchetto elettrodomestici_2023, se ci sono (id che parlano di quel tipo). */
+/** Il contatore dei cicli e il sensore di stato di un vecchio pacchetto basato su contatori e sensori di stato, se ci sono (id che parlano di quel tipo). */
 export function guessOldPackage(states: Record<string, HassState>, type: ApplianceType): { counter: string; status: string } {
   const ids = Object.keys(states);
   const counter = ids.find((id) => id.startsWith("counter.") && OLD_WORDS[type].test(id) && /cicl/.test(id)) ?? ids.find((id) => id.startsWith("counter.") && OLD_WORDS[type].test(id)) ?? "";
