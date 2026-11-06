@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { --card-background-color:#fff; --primary-text-color:#212121; --secondary-text-color:#727272; --divider-color:#e0e0e0; --secondary-background-color:#f2f2f2; --primary-color:#03a9f4; }
+  body.dark { --card-background-color:#1c1c1c; --primary-text-color:#e1e1e1; --secondary-text-color:#9b9b9b; --divider-color:#3a3a3a; --secondary-background-color:#2a2a2a; background:#111; }
+  body { margin:0; padding:16px; background:#e9ecef; font-family:Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  ha-card { display:block; background:var(--card-background-color); border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.15); color:var(--primary-text-color); }
+  ha-icon { display:inline-block; width:1em; height:1em; }
+</style></head>
+<body><div class="wrap" id="root"></div>
+<script>customElements.define('ha-icon', class extends HTMLElement{connectedCallback(){this.textContent='●'; this.style.fontSize='12px'}});</script>
+<script src="bundle.js"></script>
+<script>
+// Pagina di prova: stati finti di tutti e sei gli elettrodomestici. Parametri: theme=dark, only=lavatrice,forno, open=elettro-stats-dialog|elettro-charts-dialog|elettro-settings-dialog, key=lavatrice, tab=consumi, empty=1
+const params = new URLSearchParams(location.search);
+if (params.get("theme") === "dark") document.body.classList.add("dark");
+const now = Date.now();
+const iso = (ms) => new Date(ms).toISOString();
+const phases = {
+  lavatrice: ["Lavaggio","Risciacquo","Centrifuga"], lavastoviglie: ["Lavaggio","Risciacquo","Asciugatura"], asciugatrice: ["Asciugatura","Raffreddamento / antipiega"],
+  forno: ["Riscaldamento","Mantenimento","Raffreddamento"], frigorifero: ["Compressore acceso"], microonde: ["In funzione"],
+};
+const types = {
+  lavatrice:{label:"Lavatrice",off_label:"Spenta",done_label:"Da svuotare",has_finished:true,notify:true,maint_label:"Pulizia guarnizione e cestello",start_w:10,stop_w:4,start_delay:30,end_delay:420,min_cycle:600,heat_w:900,maint_cycles:30,alert_minutes:0},
+  lavastoviglie:{label:"Lavastoviglie",off_label:"Spenta",done_label:"Da svuotare",has_finished:true,notify:true,maint_label:"Pulizia filtri e sale",start_w:5,stop_w:3,start_delay:30,end_delay:600,min_cycle:900,heat_w:900,maint_cycles:40,alert_minutes:0},
+  asciugatrice:{label:"Asciugatrice",off_label:"Spenta",done_label:"Da svuotare",has_finished:true,notify:true,maint_label:"Pulizia filtro e condensatore",start_w:10,stop_w:4,start_delay:30,end_delay:300,min_cycle:600,heat_w:400,maint_cycles:10,alert_minutes:0},
+  forno:{label:"Forno",off_label:"Spento",done_label:"",has_finished:false,notify:true,maint_label:"Pulizia",start_w:100,stop_w:6,start_delay:10,end_delay:90,min_cycle:120,heat_w:800,maint_cycles:0,alert_minutes:180},
+  frigorifero:{label:"Frigorifero",off_label:"Compressore fermo",done_label:"",has_finished:false,notify:true,maint_label:"Pulizia",start_w:25,stop_w:12,start_delay:30,end_delay:60,min_cycle:0,heat_w:100000,maint_cycles:0,alert_minutes:480},
+  microonde:{label:"Microonde",off_label:"Spento",done_label:"",has_finished:false,notify:true,maint_label:"Pulizia",start_w:80,stop_w:30,start_delay:3,end_delay:8,min_cycle:5,heat_w:100000,maint_cycles:0,alert_minutes:20},
+};
+for (const t in types) { types[t].icon = "mdi:" + t; types[t].phases = phases[t]; }
+// [tipo, nome, stato, fase, indice, potenza, minuti trascorsi, kWh ciclo, stima s, manutenzione%]
+const defs = [
+  ["lavatrice","Lavatrice","in_funzione","Risciacquo",1,1850,38,0.62,1500,93],
+  ["lavastoviglie","Lavastoviglie","terminato","Da svuotare",null,2,0,0,null,60],
+  ["asciugatrice","Asciugatrice","in_funzione","Asciugatura",0,780,55,1.1,1200,100],
+  ["forno","Forno","spento","Spento",null,2,0,0,null,null],
+  ["frigorifero","Frigorifero","in_funzione","Compressore acceso",0,92,12,0.02,null,null],
+  ["microonde","Microonde","non_disponibile","Non disponibile",null,null,0,0,null,null],
+];
+const only = params.get("only") ? params.get("only").split(",") : null;
+const states = {}; const appliances = [];
+defs.forEach(([type,name,st,fase,idx,pw,min,kwh,est,maint]) => {
+  if (only && !only.includes(type)) return;
+  const d = types[type]; const key = type;
+  const eid = "sensor."+key+"_stato";
+  const snap = { tipo:type, fase, fase_indice:idx, fasi:phases[type], inizio: st==="in_funzione"? iso(now-min*60000):null, fine: st==="terminato"? iso(now-25*60000):null, trascorso_s:min*60,
+    energia_ciclo: st==="in_funzione"?kwh:null, costo_ciclo: st==="in_funzione"?kwh*0.3:null, picco_ciclo: st==="in_funzione"?2000:null, stima_rimanente_s: est,
+    oggi_kwh: 1.2+Math.random()*0.1, oggi_eur: 0.36, oggi_cicli: type==="frigorifero"?24:2, oggi_secondi: 5400, manutenzione_cicli: maint===null?0:Math.round(maint*d.maint_cycles/100), manutenzione_soglia:d.maint_cycles, manutenzione_pct:maint, ultimo_ciclo:null };
+  states[eid] = { entity_id:eid, state:st, attributes:snap };
+  states["sensor."+key+"_potenza"] = { entity_id:"sensor."+key+"_potenza", state: pw===null?"unavailable":String(pw), attributes:{unit_of_measurement:"W", device_class:"power", friendly_name:"Presa "+name} };
+  const extras = type==="asciugatrice" ? [{entity:"sensor.asciugatrice_programma",label:"Programma"},{entity:"sensor.asciugatrice_fine",label:"Fine prevista"},{entity:"sensor.asciugatrice_stato_costruttore",label:""}] : [];
+  if (type==="asciugatrice") {
+    states["sensor.asciugatrice_programma"]={entity_id:"sensor.asciugatrice_programma",state:"cotone_extra",attributes:{friendly_name:"Programma"}};
+    states["sensor.asciugatrice_fine"]={entity_id:"sensor.asciugatrice_fine",state:iso(now+20*60000),attributes:{device_class:"timestamp",friendly_name:"Fine"}};
+    states["sensor.asciugatrice_stato_costruttore"]={entity_id:"sensor.asciugatrice_stato_costruttore",state:"running",attributes:{friendly_name:"Stato Electrolux"}};
+  }
+  appliances.push({ id:key, key, type, name, entity:"sensor."+key+"_potenza", energy_entity:null, start_w:d.start_w, stop_w:d.stop_w, start_delay:d.start_delay, end_delay:d.end_delay, min_cycle:d.min_cycle, heat_w:d.heat_w,
+    maint_cycles:d.maint_cycles, alert_minutes:d.alert_minutes, notify:d.notify, extras, state:st, ...snap, entities:{stato:eid} });
+});
+states["counter.cicli_lavaggio_lavatrice"]={entity_id:"counter.cicli_lavaggio_lavatrice",state:"198",attributes:{friendly_name:"Cicli totali lavatrice"}};
+states["binary_sensor.washing_machine_status"]={entity_id:"binary_sensor.washing_machine_status",state:"on",attributes:{friendly_name:"Lavatrice ON/OFF"}};
+states["sensor.presa_lavatrice_energia"]={entity_id:"sensor.presa_lavatrice_energia",state:"512.3",attributes:{unit_of_measurement:"kWh",device_class:"energy",friendly_name:"Presa lavatrice energia"}};
+states["sensor.potenza_vuota"] = { entity_id:"sensor.potenza_vuota", state:"0", attributes:{unit_of_measurement:"W", friendly_name:"Presa libera"} };
+const info = { entry_id:"e1", title:"Elettrodomestici", price_kwh:0.3, price_entity:"", notify_services:["notify.mobile_app_pixel"], types, appliances: params.get("empty")==="1"?[]:appliances };
+function history(ids, start, end) {
+  const out = {};
+  ids.forEach((id) => {
+    const rows = []; const n = 200;
+    if (id.endsWith("_stato")) { rows.push({s:"spento",lu:start/1000}); rows.push({s:"in_funzione",lu:(start+(end-start)*0.3)/1000}); rows.push({s:"terminato",lu:(start+(end-start)*0.62)/1000}); rows.push({s:"spento",lu:(start+(end-start)*0.8)/1000}); }
+    else for (let i=0;i<n;i++){ const f=i/n; let v=3; if (f>0.3&&f<0.62) v = f>0.36&&f<0.46 ? 2000 : f>0.55 ? 420 : 180+30*Math.sin(i); rows.push({s:String(v),lu:(start+(end-start)*f)/1000}); }
+    out[id]=rows;
+  });
+  return out;
+}
+const series = []; for (let i=89;i>=0;i--){ const d=new Date(now-i*86400000); const c = (i*7)%5===0?0:(i%3)+1; series.push({date:d.toISOString().slice(0,10), kwh:+(c*0.55+ (i%4)*0.07).toFixed(3), eur:+(c*0.165).toFixed(3), cycles:c, sec:c*5400}); }
+const tot = (n) => series.slice(-n).reduce((a,d)=>({kwh:a.kwh+d.kwh,eur:a.eur+d.eur,cycles:a.cycles+d.cycles,sec:a.sec+d.sec}),{kwh:0,eur:0,cycles:0,sec:0});
+const stats = { periods:{oggi:tot(1),ieri:series[88],settimana:tot(4),mese:tot(12),anno:tot(90),ultimi30:tot(30),totale:tot(90)}, series, price_kwh:0.3,
+  summary:{count:20,avg_kwh:0.82,avg_eur:0.25,avg_seconds:6300,median_seconds:6000,min_seconds:2400,max_seconds:9200,max_kwh:1.5},
+  cycles:Array.from({length:12},(_,i)=>({s:iso(now-(i+1)*86400000*1.3),e:iso(now-(i+1)*86400000*1.3+(5400+i*300)*1000),kwh:0.7+i*0.04,eur:0.21+i*0.012,pk:1800+i*20})),
+  maintenance:{count:28,threshold:30,pct:93,due:false} };
+const hass = { states, services:{notify:{mobile_app_pixel:{},casa:{}}}, callService: async()=>{}, callWS: async (m) => {
+  if (m.type==="elettrodomestici/info") return info;
+  if (m.type==="elettrodomestici/update") return m;
+  if (m.type==="elettrodomestici/action") return {ok:true};
+  if (m.type==="elettrodomestici/import_history") return {days_written:412, energy_days:640, kwh:318.4, cycle_days:8, cycles:11, baseline:187, runtime_days:8};
+  if (m.type==="elettrodomestici/stats") { const out={}; appliances.forEach((a)=>{ out[a.key]=stats; }); return out; }
+  if (m.type==="history/history_during_period") return history(m.entity_ids, Date.parse(m.start_time), Date.parse(m.end_time));
+  throw new Error("non gestito "+m.type); } };
+const el = document.createElement("elettrodomestici-card");
+el.setConfig({type:"custom:elettrodomestici-card", header: params.get("header")==="0"?false:undefined}); el.hass = hass;
+document.getElementById("root").appendChild(el);
+const op = params.get("open");
+if (op) setTimeout(async ()=>{ await el._open(op, params.get("key")||""); if (params.get("tab")==="consumi") { const d=document.querySelector("elettro-charts-dialog"); d._setTab("consumi"); } if (params.get("import")) { const d=document.querySelector("elettro-settings-dialog"); d._advanced="imp-"+params.get("key"); d._setImp(params.get("key"),{energy:"sensor.presa_lavatrice_energia"}); if (params.get("import")==="run") await d._import(d._list.find(a=>a.id===params.get("key"))); } if (params.get("addtype")) { const d=document.querySelector("elettro-settings-dialog"); d._addType=params.get("addtype"); } }, 600);
+</script></body></html>

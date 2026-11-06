@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Appliances",
+        "description": "Create the appliance manager. Washing machine, dishwasher, dryer, oven, fridge and microwave are added from the card (gear icon)."
+      }
+    },
+    "abort": {
+      "already_configured": "Appliances is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "stato": {
+        "name": "Status",
+        "state": {
+          "spento": "Off",
+          "in_funzione": "Running",
+          "terminato": "Finished",
+          "non_disponibile": "Unavailable"
+        }
+      },
+      "oggi_energia": {
+        "name": "Energy today"
+      },
+      "oggi_costo": {
+        "name": "Cost today"
+      },
+      "oggi_cicli": {
+        "name": "Cycles today"
+      },
+      "manutenzione": {
+        "name": "Maintenance"
+      }
+    },
+    "binary_sensor": {
+      "in_funzione": {
+        "name": "Running"
+      }
+    },
+    "button": {
+      "svuotata": {
+        "name": "Emptied"
+      },
+      "manutenzione_fatta": {
+        "name": "Maintenance done"
+      }
+    }
+  }
+}

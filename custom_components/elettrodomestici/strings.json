@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Elettrodomestici",
+        "description": "Crea il gestore degli elettrodomestici. Lavatrice, lavastoviglie, asciugatrice, forno, frigorifero e microonde si aggiungono dalla scheda (ingranaggio)."
+      }
+    },
+    "abort": {
+      "already_configured": "Elettrodomestici è già configurato."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "stato": {
+        "name": "Stato",
+        "state": {
+          "spento": "Spento",
+          "in_funzione": "In funzione",
+          "terminato": "Terminato",
+          "non_disponibile": "Non disponibile"
+        }
+      },
+      "oggi_energia": {
+        "name": "Energia di oggi"
+      },
+      "oggi_costo": {
+        "name": "Costo di oggi"
+      },
+      "oggi_cicli": {
+        "name": "Cicli di oggi"
+      },
+      "manutenzione": {
+        "name": "Manutenzione"
+      }
+    },
+    "binary_sensor": {
+      "in_funzione": {
+        "name": "In funzione"
+      }
+    },
+    "button": {
+      "svuotata": {
+        "name": "Ho svuotato"
+      },
+      "manutenzione_fatta": {
+        "name": "Manutenzione fatta"
+      }
+    }
+  }
+}

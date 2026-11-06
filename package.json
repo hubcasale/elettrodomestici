@@ -1,0 +1,24 @@
+{
+  "name": "elettrodomestici",
+  "version": "0.1.0",
+  "description": "Scheda Lovelace degli elettrodomestici (lavatrice, lavastoviglie, asciugatrice, forno, frigorifero, microonde), servita dall'integrazione elettrodomestici.",
+  "license": "MIT",
+  "author": "Corrado Gamberoni",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hubcasale/elettrodomestici"
+  },
+  "scripts": {
+    "build": "esbuild src/elettrodomestici-card.ts --bundle --format=esm --minify --outfile=custom_components/elettrodomestici/frontend/elettrodomestici-card.js",
+    "build:dev": "esbuild src/elettrodomestici-card.ts --bundle --format=iife --outfile=dev/bundle.js",
+    "typecheck": "tsc --noEmit",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --outdir=.test-build --log-level=warning && node --test .test-build/"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "lit": "^3.2.0"
+  }
+}
