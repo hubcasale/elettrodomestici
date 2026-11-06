@@ -326,3 +326,13 @@ def test_on_seconds_split_at_midnight():
     ]
     out = e.on_seconds_per_day(rows, datetime(2030, 10, 21, 0, 0, tzinfo=LOCAL))
     assert out == {"2030-10-19": 3600, "2030-10-20": 3600 + 1800 + 7200}
+
+
+def test_maker_config_is_validated():
+    base = {"type": "asciugatrice", "name": "Asc", "entity": "sensor.p"}
+    ok = e.ApplianceConfig.from_dict({**base, "maker": "electrolux", "maker_device": " abc123 "})
+    assert ok.maker == "electrolux" and ok.maker_device == "abc123"
+    assert ok.to_dict()["maker"] == "electrolux" and ok.to_dict()["maker_device"] == "abc123"
+    assert e.ApplianceConfig.from_dict({**base, "maker": "electrolux"}).maker is None            # senza dispositivo
+    assert e.ApplianceConfig.from_dict({**base, "maker": "boh", "maker_device": "x"}).maker is None
+    assert e.ApplianceConfig.from_dict(base).maker_device is None

@@ -46,8 +46,15 @@ header: false                    # senza titolo e ingranaggio
    Su Fully Kiosk svuota la cache dopo ogni aggiornamento.
 
 Ogni presa deve avere un sensore di **potenza** (W o kW). Se ha anche un contatore di **energia** (kWh) indicalo: i consumi saranno più precisi;
-altrimenti l'energia si ricava dalla potenza. Per l'asciugatrice con l'integrazione del costruttore (es. Electrolux) aggiungi le sue entità
-come *dispositivi collegati*: programma, tempo rimanente e stato si vedono sulla tessera.
+altrimenti l'energia si ricava dalla potenza.
+
+### Integrazione del costruttore (Electrolux)
+Nelle Preferenze dell'elettrodomestico c'è la spunta **Usa l'integrazione del costruttore**: si sceglie il dispositivo dell'integrazione
+[Electrolux](https://github.com/TTLucian/ha-electrolux) già presente in Home Assistant. Da lì arrivano **stato, fase, programma, sportello e tempo
+rimanente** (la barra di avanzamento si calcola sul tempo che resta), mentre **consumi, costi e cicli restano quelli della presa**.
+Gli apparecchi Electrolux si scollegano dal cloud quando sono spenti: in quel caso i loro sensori sono "sconosciuti" e la tessera
+mostra una riga "apparecchio spento o non collegato", continuando a funzionare con la sola potenza della presa.
+Per altre entità (programma di un'altra marca, ecc.) restano i *dispositivi collegati*.
 
 ## Entità, eventi, notifiche
 

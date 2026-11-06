@@ -139,6 +139,91 @@ export function extraRows(app: ApplianceCfg, states: Record<string, HassState>, 
   });
 }
 
+// ---- integrazione del costruttore (Electrolux): stato, fase, programma e tempo rimanente
+const MAKER_STATE: Record<string, string> = {
+  running: "In funzione", paused: "In pausa", "delayed start": "Avvio ritardato", "end of cycle": "Ciclo terminato",
+  off: "Spenta", idle: "Pronta", "ready to start": "Pronta", alarm: "Allarme",
+};
+const MAKER_PHASE: Record<string, string> = { dry: "Asciugatura", cool: "Raffreddamento", anticrease: "Antipiega", unavailable: "" };
+const MAKER_PROGRAM: Record<string, string> = {
+  cottons: "Cotone", synthetics: "Sintetici", delicates: "Delicati", wool: "Lana", silk: "Seta", outdoor: "Outdoor", eco: "Cotone Eco",
+  "rapid 3kg": "Rapido 3 kg", sportwear: "Sportivo", traininggear: "Abbigliamento sportivo", "soccer rugby": "Calcio e rugby",
+  skiinggear: "Sci", duvet: "Piumone", curtains: "Tende", pillow: "Cuscini", towels: "Asciugamani", pethair: "Cuccia animali",
+  "easyiron td": "Facile stiratura", allergen: "Anti-allergie", jeans: "Jeans", baby: "Baby", linen: "Lino", dryingrack: "A tempo",
+  mixcare: "Misti", hygiene: "Igiene", "down jacket": "Piumino", bedlinenplus: "Biancheria letto", oneitemfast: "Un capo veloce",
+};
+const BAD_STATES = ["", "unknown", "unavailable", "none"];
+
+export interface MakerView {
+  /** l'apparecchio risponde (acceso e collegato al cloud): altrimenti i valori non ci sono */
+  connected: boolean;
+  /** in funzione, in pausa o con l'avvio ritardato */
+  active: boolean;
+  paused: boolean;
+  stato: string;
+  fase: string;
+  programma: string;
+  rimanenteS: number | null;
+  porta: string;
+}
+
+const norm = (v: string): string => v.trim().toLowerCase().replace(/_/g, " ");
+
+export function makerProgram(raw: string): string {
+  const key = norm(raw);
+  const tail = key.includes(" pr ") ? key.slice(key.lastIndexOf(" pr ") + 4) : key;
+  return MAKER_PROGRAM[tail] ?? tail.replace(/^./, (c) => c.toUpperCase());
+}
+
+export function makerView(app: Pick<ApplianceInfo, "maker" | "maker_entities">, states: Record<string, HassState>): MakerView | null {
+  const ents = app.maker_entities;
+  if (!app.maker || !ents || !ents.stato) return null;
+  const get = (role: string): HassState | undefined => (ents[role] ? states[ents[role]] : undefined);
+  const raw = get("stato");
+  const link = get("connessione");
+  const connected = !!raw && !BAD_STATES.includes(norm(raw.state)) && link?.state !== "off";
+  const empty: MakerView = { connected: false, active: false, paused: false, stato: "", fase: "", programma: "", rimanenteS: null, porta: "" };
+  if (!connected || !raw) return empty;
+  const key = norm(raw.state);
+  const txt = (role: string): string => {
+    const st = get(role);
+    return st && !BAD_STATES.includes(norm(st.state)) ? st.state : "";
+  };
+  const phase = txt("fase");
+  const rem = get("rimanente");
+  let remaining: number | null = null;
+  if (rem && !BAD_STATES.includes(norm(rem.state))) {
+    const n = toNumber(rem.state);
+    if (n !== null && n > 0) {
+      const unit = String(rem.attributes.unit_of_measurement ?? "min").toLowerCase();
+      remaining = unit === "s" ? n : unit === "h" ? n * 3600 : n * 60;
+    }
+  }
+  const door = get("porta");
+  const active = ["running", "paused", "delayed start"].includes(key);
+  return {
+    connected: true,
+    active,
+    paused: key === "paused",
+    stato: MAKER_STATE[key] ?? raw.state,
+    fase: phase ? MAKER_PHASE[norm(phase)] ?? phase : "",
+    programma: txt("programma") ? makerProgram(txt("programma")) : "",
+    rimanenteS: active ? remaining : null,
+    porta: door && !BAD_STATES.includes(norm(door.state)) ? (door.state === "on" ? "aperto" : "chiuso") : "",
+  };
+}
+
+/** Righe dei dati presi dall'integrazione del costruttore (se è attiva). */
+export function makerRows(app: Pick<ApplianceInfo, "maker" | "maker_entities">, mv: MakerView | null): ExtraRow[] {
+  if (!mv) return [];
+  const name = app.maker ? app.maker.charAt(0).toUpperCase() + app.maker.slice(1) : "Costruttore";
+  if (!mv.connected) return [{ label: name, value: "apparecchio spento o non collegato", entity: "" }];
+  const rows: ExtraRow[] = [{ label: "Stato", value: mv.stato, entity: "" }];
+  if (mv.programma) rows.push({ label: "Programma", value: mv.programma, entity: "" });
+  if (mv.porta) rows.push({ label: "Sportello", value: mv.porta, entity: "" });
+  return rows;
+}
+
 export interface TileModel {
   key: string;
   name: string;
@@ -164,7 +249,12 @@ export interface TileModel {
 }
 
 export function tileModel(app: ApplianceInfo, states: Record<string, HassState>, defaults: Partial<Record<ApplianceType, TypeDefaults>> | undefined, nowMs: number): TileModel {
-  const { snap, state } = liveSnapshot(app, states);
+  const live = liveSnapshot(app, states);
+  const snap = live.snap;
+  const mv = makerView(app, states);
+  let state = live.state;
+  // con l'integrazione del costruttore attiva, se dice che il ciclo è in corso (anche in pausa o con la presa a riposo) lo si vede in funzione
+  if (mv?.active && state === "spento") state = "in_funzione";
   const power = readPower(states[app.entity]);
   const def = defaults?.[app.type];
   const hasFinished = def?.has_finished ?? ["lavatrice", "lavastoviglie", "asciugatrice"].includes(app.type);
@@ -176,7 +266,8 @@ export function tileModel(app: ApplianceInfo, states: Record<string, HassState>,
     phase = def?.off_label ?? "Spento";
     statusLine = phase;
   } else if (state === "in_funzione") {
-    statusLine = elapsed !== null ? `${snap.fase} · da ${formatDuration(elapsed)}` : snap.fase;
+    const label = mv?.active ? [mv.paused ? "In pausa" : mv.fase || snap.fase, mv.programma].filter(Boolean).join(" · ") : snap.fase;
+    statusLine = elapsed !== null ? `${label} · da ${formatDuration(elapsed)}` : label;
   } else if (state === "terminato") {
     const since = snap.fine ? Date.parse(snap.fine) : NaN;
     statusLine = `${snap.fase}${Number.isNaN(since) ? "" : ` · finito alle ${hhmm(new Date(since))}`}`;
@@ -189,6 +280,13 @@ export function tileModel(app: ApplianceInfo, states: Record<string, HassState>,
     progressLabel = `Fase ${snap.fase_indice + 1} di ${snap.fasi.length}`;
   }
   if (state === "in_funzione" && snap.stima_rimanente_s !== null) remainingText = `fine stimata fra circa ${formatDuration(snap.stima_rimanente_s)}`;
+  if (state === "in_funzione" && mv?.active && mv.rimanenteS !== null) {
+    remainingText = `fine fra ${formatDuration(mv.rimanenteS)}`;
+    if (elapsed !== null) {
+      progress = Math.min(1, elapsed / (elapsed + mv.rimanenteS));
+      progressLabel = mv.fase || progressLabel;
+    }
+  }
   return {
     key: app.key,
     name: app.name,
@@ -207,7 +305,7 @@ export function tileModel(app: ApplianceInfo, states: Record<string, HassState>,
     cycleEur: snap.costo_ciclo,
     maintPct: snap.manutenzione_pct,
     maintDue: snap.manutenzione_pct !== null && snap.manutenzione_pct >= 100,
-    extras: extraRows(app, states, nowMs),
+    extras: [...makerRows(app, mv), ...extraRows(app, states, nowMs)],
     canAck: state === "terminato",
     remainingText,
   };
@@ -268,6 +366,8 @@ export function newAppliance(type: ApplianceType, entity: string, name: string, 
     alert_minutes: def.alert_minutes,
     notify: def.notify,
     extras: [],
+    maker: null,
+    maker_device: null,
   };
 }
 

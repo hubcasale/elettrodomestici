@@ -46,7 +46,7 @@ export class ElettroSettingsDialog extends LitElement {
     this._list = this.info.appliances.map((a) => ({
       id: a.id, type: a.type, name: a.name, entity: a.entity, energy_entity: a.energy_entity, start_w: a.start_w, stop_w: a.stop_w,
       start_delay: a.start_delay, end_delay: a.end_delay, min_cycle: a.min_cycle, heat_w: a.heat_w, maint_cycles: a.maint_cycles,
-      alert_minutes: a.alert_minutes, notify: a.notify, extras: a.extras.map((x) => ({ ...x })),
+      alert_minutes: a.alert_minutes, notify: a.notify, extras: a.extras.map((x) => ({ ...x })), maker: a.maker ?? null, maker_device: a.maker_device ?? null,
     }));
     this._price = String(this.info.price_kwh);
     this._priceEntity = this.info.price_entity;
@@ -206,6 +206,29 @@ export class ElettroSettingsDialog extends LitElement {
       <span class="hint">${hint}</span></label>`;
   }
 
+  /** Spunta per prendere stato, fase, programma e tempo rimanente dall'integrazione del costruttore (per ora Electrolux); i consumi restano quelli della presa. */
+  private _makerBox(a: ApplianceCfg) {
+    const devices = this.info.makers ?? [];
+    const on = !!a.maker && !!a.maker_device;
+    const current = devices.find((x) => x.device_id === a.maker_device);
+    return html`<div class="row"><div class="t"><div class="lab">Usa l'integrazione del costruttore</div>
+        <div class="hint">${devices.length === 0
+          ? "Nessun dispositivo Electrolux trovato in Home Assistant (installa e configura l'integrazione Electrolux)."
+          : "Stato, fase, programma e tempo rimanente arrivano dall'integrazione Electrolux (solo mentre l'apparecchio è acceso); consumi e cicli restano quelli della presa."}</div></div>
+        <button class=${on ? "sw on" : "sw"} role="switch" aria-checked=${on ? "true" : "false"} aria-label="Usa l'integrazione del costruttore" ?disabled=${devices.length === 0 && !on}
+          @click=${() => (on ? this._patch(a.id, { maker: null, maker_device: null }) : devices[0] && this._patch(a.id, { maker: devices[0].maker, maker_device: devices[0].device_id }))}><span class="knob"></span></button></div>
+      ${on
+        ? html`<label class="f">Dispositivo
+            <select class="txt" @change=${(e: Event) => {
+              const d = devices.find((x) => x.device_id === (e.target as HTMLSelectElement).value);
+              if (d) this._patch(a.id, { maker: d.maker, maker_device: d.device_id });
+            }}>
+              ${devices.map((d) => html`<option value=${d.device_id} ?selected=${d.device_id === a.maker_device}>${d.label} · ${d.name}</option>`)}
+              ${current ? nothing : html`<option value=${a.maker_device ?? ""} selected>${a.maker_device} (non trovato)</option>`}
+            </select></label>`
+        : nothing}`;
+  }
+
   private _editor(a: ApplianceCfg) {
     const d = this.info.types[a.type];
     const live = this.hass.states[a.entity];
@@ -221,6 +244,8 @@ export class ElettroSettingsDialog extends LitElement {
           <input class="txt" list=${`dl-en-${a.id}`} placeholder="sensor.…_energia" .value=${a.energy_entity ?? ""} @change=${(e: Event) => this._patch(a.id, { energy_entity: (e.target as HTMLInputElement).value.trim() || null })} />
           <datalist id=${`dl-en-${a.id}`}>${energySensors(this.hass.states).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist>
           <span class="hint">Se manca, l'energia si ricava dalla potenza. Con il contatore della presa è più precisa.</span></label>
+
+        ${this._makerBox(a)}
 
         <div class="f">Dispositivi collegati (facoltativi)
           <div class="chips">

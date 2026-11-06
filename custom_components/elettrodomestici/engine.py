@@ -21,6 +21,7 @@ DONE_TTL = 12 * 3600           # "terminato" resta finché non lo si conferma; d
 KEEP_CYCLES = 300
 KEEP_DAYS = 800
 
+MAKER_TYPES = ("electrolux",)
 ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 
 
@@ -143,6 +144,8 @@ class ApplianceConfig:
     alert_minutes: int = 0
     notify: bool = True
     extras: tuple[tuple[str, str], ...] = ()   # (entità, etichetta): programma, tempo rimanente, stato del costruttore...
+    maker: str | None = None                   # integrazione del costruttore da cui prendere stato, fase, programma e tempo rimanente
+    maker_device: str | None = None            # dispositivo di quell'integrazione (id del registro dispositivi)
 
     @property
     def profile(self) -> Profile:
@@ -155,6 +158,7 @@ class ApplianceConfig:
             "min_cycle": self.min_cycle, "heat_w": self.heat_w, "maint_cycles": self.maint_cycles,
             "alert_minutes": self.alert_minutes, "notify": self.notify,
             "extras": [{"entity": e, "label": l} for e, l in self.extras],
+            "maker": self.maker, "maker_device": self.maker_device,
         }
 
     @staticmethod
@@ -175,6 +179,12 @@ class ApplianceConfig:
                 ent = x["entity"].strip()
                 if all(ent != e for e, _ in extras):
                     extras.append((ent, str(x.get("label") or "").strip()[:40]))
+        maker = d.get("maker")
+        maker = maker if isinstance(maker, str) and maker in MAKER_TYPES else None
+        maker_device = d.get("maker_device")
+        maker_device = maker_device.strip()[:64] if maker and isinstance(maker_device, str) and maker_device.strip() else None
+        if maker_device is None:
+            maker = None
         stop_w = _num(d.get("stop_w"), p.stop_w, 0, 5000)
         start_w = max(_num(d.get("start_w"), p.start_w, 0, 5000), stop_w)
         return ApplianceConfig(
@@ -193,6 +203,8 @@ class ApplianceConfig:
             alert_minutes=int(_num(d.get("alert_minutes"), p.alert_minutes, 0, 5000)),
             notify=d.get("notify", p.notify) is not False,
             extras=tuple(extras),
+            maker=maker,
+            maker_device=maker_device,
         )
 
 

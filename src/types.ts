@@ -37,6 +37,16 @@ export interface ApplianceCfg {
   alert_minutes: number;
   notify: boolean;
   extras: Extra[];
+  /** integrazione del costruttore da cui prendere stato, fase, programma e tempo rimanente (per ora solo "electrolux") */
+  maker: string | null;
+  maker_device: string | null;
+}
+
+export interface MakerDevice {
+  maker: string;
+  label: string;
+  device_id: string;
+  name: string;
 }
 
 export interface CycleRec {
@@ -74,6 +84,8 @@ export interface ApplianceInfo extends ApplianceCfg, Snapshot {
   key: string;
   state: MachineState;
   entities: Record<string, string>;
+  /** entità del dispositivo del costruttore per ruolo (stato, fase, rimanente, programma, porta, connessione) */
+  maker_entities?: Record<string, string>;
 }
 
 export interface TypeDefaults {
@@ -103,6 +115,7 @@ export interface ElettroInfo {
   notify_services: string[];
   types: Record<ApplianceType, TypeDefaults>;
   appliances: ApplianceInfo[];
+  makers?: MakerDevice[];
 }
 
 export interface Totals {

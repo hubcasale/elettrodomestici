@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   appliancesError, energySensors, extraValue, fmt, fmtEur, fmtKwh, formatDuration, formatHours, liveSnapshot, metricText, newAppliance,
-  counters, gridColumns, gridTemplate, guessOldPackage, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
+  counters, gridColumns, gridTemplate, guessOldPackage, makerView, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
 } from "../src/card-logic";
 import { applianceSvg } from "../src/appliance-svg";
 import type { ApplianceInfo, HassState, TypeDefaults } from "../src/types";
@@ -195,4 +195,34 @@ test("colonne della griglia: da 1 a 8, altrimenti automatico", () => {
   assert.equal(gridColumns("boh"), null);
   assert.equal(gridTemplate(2), "repeat(2, minmax(0, 1fr))");
   assert.match(gridTemplate(0), /auto-fill/);
+});
+
+test("integrazione del costruttore: stato, fase, programma e tempo rimanente al posto delle stime", () => {
+  const now = Date.parse("2030-10-21T20:30:00Z");
+  const ents = { stato: "sensor.d_stato", fase: "sensor.d_fase", rimanente: "sensor.d_resto", programma: "select.d_prog", porta: "binary_sensor.d_porta", connessione: "binary_sensor.d_conn" };
+  const states = {
+    "sensor.p": st("0.5"),
+    "sensor.lavatrice_stato": st("in_funzione", { fase: "Lavaggio", inizio: "2030-10-21T20:00:00Z", stima_rimanente_s: 3000 }),
+    "sensor.d_stato": st("Running"), "sensor.d_fase": st("Dry"), "sensor.d_resto": st("42", { unit_of_measurement: "min" }),
+    "select.d_prog": st("Outd Proof Pr Outdoor"), "binary_sensor.d_porta": st("off"), "binary_sensor.d_conn": st("on"),
+  };
+  const t = tileModel(app({ maker: "electrolux", maker_device: "x", maker_entities: ents }), states, { lavatrice: DEF }, now);
+  assert.equal(t.state, "in_funzione");
+  assert.match(t.statusLine, /Asciugatura · Outdoor · da 30 min/);
+  assert.match(t.remainingText, /fine fra 42 min/);
+  assert.ok(t.progress !== null && Math.abs(t.progress - 30 / 72) < 0.01);
+  assert.deepEqual(t.extras.map((x) => [x.label, x.value]), [["Stato", "In funzione"], ["Programma", "Outdoor"], ["Sportello", "chiuso"]]);
+});
+
+test("integrazione del costruttore: in pausa con la presa a riposo si vede in funzione; spenta = una riga sola", () => {
+  const ents = { stato: "sensor.d_stato", connessione: "binary_sensor.d_conn" };
+  const paused = { "sensor.p": st("1"), "sensor.d_stato": st("Paused"), "binary_sensor.d_conn": st("on") };
+  const a = tileModel(app({ maker: "electrolux", maker_device: "x", maker_entities: ents }), paused, { lavatrice: DEF }, Date.now());
+  assert.equal(a.state, "in_funzione");
+  assert.match(a.statusLine, /In pausa/);
+  const off = { "sensor.p": st("1"), "sensor.d_stato": st("unknown"), "binary_sensor.d_conn": st("off") };
+  const b = tileModel(app({ maker: "electrolux", maker_device: "x", maker_entities: ents }), off, { lavatrice: DEF }, Date.now());
+  assert.equal(b.state, "spento");
+  assert.deepEqual(b.extras.map((x) => x.label), ["Electrolux"]);
+  assert.equal(makerView({ maker: null, maker_entities: ents }, paused), null);
 });

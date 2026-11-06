@@ -15,6 +15,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from . import engine as eng
+from . import maker as mk
 from .const import (
     CONF_APPLIANCES, CONF_NOTIFY, CONF_PRICE, CONF_PRICE_ENTITY, DEFAULT_PRICE, DOMAIN, EVENT_ALERT, EVENT_FINISHED, MAX_GAP,
     SAVE_EVERY, SIGNAL_UPDATE, STORAGE_VERSION, TICK_SECONDS,
@@ -427,8 +428,10 @@ class ElettroController:
             "price_entity": self.entry.options.get(CONF_PRICE_ENTITY) or "",
             "notify_services": list(self.entry.options.get(CONF_NOTIFY) or []),
             "types": eng.profile_defaults(),
+            "makers": mk.discover(self.hass),
             "appliances": [
-                {**m.cfg.to_dict(), "key": k, "state": m.state, **self.snapshot(k)} for k, m in self.machines.items()
+                {**m.cfg.to_dict(), "key": k, "state": m.state, "maker_entities": mk.entities_of(self.hass, m.cfg.maker, m.cfg.maker_device), **self.snapshot(k)}
+                for k, m in self.machines.items()
             ],
         }
 

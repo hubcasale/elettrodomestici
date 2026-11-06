@@ -281,3 +281,29 @@ async def test_import_without_recorder_is_a_clear_error(hass: HomeAssistant, has
     await client.send_json({"id": 1, "type": "elettrodomestici/import_history", "key": "lavatrice", "energy_entity": "sensor.x", "days": 5})
     res = await client.receive_json()
     assert not res["success"] and "recorder" in res["error"]["message"].lower()
+
+
+async def test_manufacturer_device_is_discovered_and_resolved(hass: HomeAssistant, hass_ws_client) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    other = MockConfigEntry(domain="electrolux", title="Electrolux")
+    other.add_to_hass(hass)
+    dev = dr.async_get(hass).async_get_or_create(config_entry_id=other.entry_id, identifiers={("electrolux", "asc")}, name="Asciugatrice")
+    reg = er.async_get(hass)
+    for key, domain in (("appliancestate", "sensor"), ("timetoend", "sensor"), ("doorstate", "binary_sensor"), ("connectivitystate", "binary_sensor"), ("language", "select")):
+        reg.async_get_or_create(domain, "electrolux", f"acc-{key}-root-asc", device_id=dev.id, config_entry=other,
+                                suggested_object_id=f"asc_{key}", translation_key=key)
+    appl = [{"type": "asciugatrice", "name": "Asciugatrice", "entity": "sensor.presa_asc", "maker": "electrolux", "maker_device": dev.id},
+            {"type": "forno", "name": "Forno", "entity": "sensor.presa_forno", "maker": "electrolux"}]   # senza dispositivo: ignorato
+    await _setup(hass, appl)
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "elettrodomestici/info"})
+    r = (await client.receive_json())["result"]
+    assert r["makers"] == [{"maker": "electrolux", "label": "Electrolux", "device_id": dev.id, "name": "Asciugatrice"}]
+    dryer, oven = r["appliances"]
+    assert dryer["maker"] == "electrolux" and dryer["maker_device"] == dev.id
+    assert dryer["maker_entities"] == {
+        "stato": "sensor.asc_appliancestate", "rimanente": "sensor.asc_timetoend", "porta": "binary_sensor.asc_doorstate",
+        "connessione": "binary_sensor.asc_connectivitystate",
+    }
+    assert oven["maker"] is None and oven["maker_entities"] == {}

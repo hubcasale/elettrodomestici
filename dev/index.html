@@ -63,7 +63,15 @@ states["counter.cicli_lavaggio_lavatrice"]={entity_id:"counter.cicli_lavaggio_la
 states["binary_sensor.washing_machine_status"]={entity_id:"binary_sensor.washing_machine_status",state:"on",attributes:{friendly_name:"Lavatrice ON/OFF"}};
 states["sensor.presa_lavatrice_energia"]={entity_id:"sensor.presa_lavatrice_energia",state:"512.3",attributes:{unit_of_measurement:"kWh",device_class:"energy",friendly_name:"Presa lavatrice energia"}};
 states["sensor.potenza_vuota"] = { entity_id:"sensor.potenza_vuota", state:"0", attributes:{unit_of_measurement:"W", friendly_name:"Presa libera"} };
-const info = { entry_id:"e1", title:"Elettrodomestici", price_kwh:0.3, price_entity:"", notify_services:["notify.mobile_app_pixel"], types, appliances: params.get("empty")==="1"?[]:appliances };
+const mk = params.get("maker"); // ?maker=on (asciugatrice accesa) | off (spenta, non collegata)
+if (mk) {
+  const d = appliances.find((a)=>a.key==="asciugatrice");
+  if (d) { d.extras = []; d.maker="electrolux"; d.maker_device="dev1"; d.maker_entities={stato:"sensor.asc_stato",fase:"sensor.asc_fase",rimanente:"sensor.asc_resto",programma:"select.asc_prog",porta:"binary_sensor.asc_porta",connessione:"binary_sensor.asc_conn"};
+    const on = mk==="on";
+    [["sensor.asc_stato",on?"Running":"unknown"],["sensor.asc_fase",on?"Dry":"unknown"],["sensor.asc_resto",on?"42":"unknown",{unit_of_measurement:"min"}],["select.asc_prog",on?"Outd Proof Pr Outdoor":"unknown"],["binary_sensor.asc_porta",on?"off":"unknown"],["binary_sensor.asc_conn",on?"on":"off"]]
+      .forEach(([id,v,at])=>{ states[id]={entity_id:id,state:v,attributes:at||{}}; }); }
+}
+const info = { entry_id:"e1", title:"Elettrodomestici", price_kwh:0.3, price_entity:"", notify_services:["notify.mobile_app_pixel"], types, makers:[{maker:"electrolux",label:"Electrolux",device_id:"dev1",name:"Asciugatrice"}], appliances: params.get("empty")==="1"?[]:appliances };
 function history(ids, start, end) {
   const out = {};
   ids.forEach((id) => {
