@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from . import engine as eng
 from . import maker as mk
+from . import robot as rb
 from .const import (
     CONF_APPLIANCES, CONF_NOTIFY, CONF_PRICE, CONF_PRICE_ENTITY, DEFAULT_PRICE, DOMAIN, EVENT_ALERT, EVENT_FINISHED, MAX_GAP,
     SAVE_EVERY, SIGNAL_UPDATE, STORAGE_VERSION, TICK_SECONDS,
@@ -88,6 +89,8 @@ class ElettroController:
         saved = await self._store.async_load() or {}
         now = dt_util.now()
         for cfg in self.configs():
+            if cfg.is_robot:
+                continue                                  # il robot si guida dall'entità vacuum.*: niente presa, niente ciclo da seguire
             m = eng.Machine(cfg)
             m.load_saved((saved.get("machines") or {}).get(cfg.id))
             self.machines[cfg.id] = m
@@ -97,7 +100,8 @@ class ElettroController:
             self.baseline[cfg.id] = int((saved.get("baseline") or {}).get(cfg.id, 0))
             self._energy_last[cfg.id] = None
             eng.prune_days(self.days[cfg.id], now.date())
-        watch = [c.entity for c in self.configs()] + [c.energy_entity for c in self.configs() if c.energy_entity]
+        plugs = [c for c in self.configs() if not c.is_robot]
+        watch = [c.entity for c in plugs] + [c.energy_entity for c in plugs if c.energy_entity]
         if watch:
             self._unsubs.append(async_track_state_change_event(self.hass, watch, self._on_source))
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, timedelta(seconds=TICK_SECONDS)))
@@ -420,6 +424,17 @@ class ElettroController:
             }
         return out
 
+    def _info_item(self, cfg: eng.ApplianceConfig) -> dict[str, Any] | None:
+        if cfg.is_robot:
+            return {**cfg.to_dict(), "key": cfg.id, "kind": "robot", "robot_entities": rb.entities_of(self.hass, cfg.entity)}
+        m = self.machines.get(cfg.id)
+        if m is None:                                     # appena aggiunto: la voce si sta per ricaricare
+            return None
+        return {
+            **cfg.to_dict(), "key": cfg.id, "kind": "plug", "state": m.state,
+            "maker_entities": mk.entities_of(self.hass, cfg.maker, cfg.maker_device), **self.snapshot(cfg.id),
+        }
+
     def info(self) -> dict[str, Any]:
         return {
             "entry_id": self.entry.entry_id,
@@ -429,10 +444,8 @@ class ElettroController:
             "notify_services": list(self.entry.options.get(CONF_NOTIFY) or []),
             "types": eng.profile_defaults(),
             "makers": mk.discover(self.hass),
-            "appliances": [
-                {**m.cfg.to_dict(), "key": k, "state": m.state, "maker_entities": mk.entities_of(self.hass, m.cfg.maker, m.cfg.maker_device), **self.snapshot(k)}
-                for k, m in self.machines.items()
-            ],
+            "appliances": [i for i in (self._info_item(c) for c in self.configs() if not c.is_robot) if i is not None],
+            "robots": [self._info_item(c) for c in self.configs() if c.is_robot],
         }
 
 

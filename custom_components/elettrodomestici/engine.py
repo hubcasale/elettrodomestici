@@ -55,6 +55,7 @@ class Profile:
     notify: bool
     maint_label: str
     steps: tuple[Step, ...]
+    robot: bool = False                  # robot aspirapolvere: non ha presa, si guida dall'entità vacuum.*
 
 
 PROFILES: dict[str, Profile] = {
@@ -94,6 +95,11 @@ PROFILES: dict[str, Profile] = {
         maint_cycles=0, alert_minutes=20, notify=True, maint_label="Pulizia",
         steps=(Step("In funzione"),),
     ),
+    "aspirapolvere": Profile(
+        "aspirapolvere", "Aspirapolvere", "mdi:robot-vacuum", "Alla base", "", False,
+        start_w=0, stop_w=0, start_delay=0, end_delay=1, min_cycle=0, heat_w=1, phase_gap=60, merge_gap=0,
+        maint_cycles=0, alert_minutes=0, notify=False, maint_label="", steps=(Step("In pulizia"),), robot=True,
+    ),
 }
 
 TUNABLE = ("start_w", "stop_w", "start_delay", "end_delay", "min_cycle", "heat_w", "maint_cycles", "alert_minutes")
@@ -105,7 +111,7 @@ def profile_defaults() -> dict[str, dict[str, Any]]:
     for t, p in PROFILES.items():
         out[t] = {
             "label": p.label, "icon": p.icon, "off_label": p.off_label, "done_label": p.done_label, "has_finished": p.has_finished,
-            "notify": p.notify, "maint_label": p.maint_label, "phases": [s.name for s in p.steps],
+            "notify": p.notify, "maint_label": p.maint_label, "phases": [s.name for s in p.steps], "robot": p.robot,
             **{k: getattr(p, k) for k in TUNABLE},
         }
     return out
@@ -151,6 +157,10 @@ class ApplianceConfig:
     def profile(self) -> Profile:
         return PROFILES[self.type]
 
+    @property
+    def is_robot(self) -> bool:
+        return PROFILES[self.type].robot
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id, "type": self.type, "name": self.name, "entity": self.entity, "energy_entity": self.energy_entity,
@@ -170,6 +180,8 @@ class ApplianceConfig:
         if typ not in PROFILES or not isinstance(entity, str) or not ENTITY_RE.match(entity.strip()):
             return None
         p = PROFILES[typ]
+        if p.robot and not entity.strip().startswith("vacuum."):
+            return None
         name = str(d.get("name") or "").strip()[:60] or p.label
         energy = d.get("energy_entity")
         energy = energy.strip() if isinstance(energy, str) and ENTITY_RE.match(energy.strip()) else None

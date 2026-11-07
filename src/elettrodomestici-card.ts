@@ -2,11 +2,12 @@ import { LitElement, html, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { applianceSvg } from "./appliance-svg";
-import { fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, summaryText, tileModel, type TileModel } from "./card-logic";
+import { fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, robotModel, summaryText, tileModel, type RobotModel, type TileModel } from "./card-logic";
 import "./settings-dialog";
 import "./stats-dialog";
 import "./charts-dialog";
-import type { ElettroInfo, HomeAssistant } from "./types";
+import "./robot-dialog";
+import type { ElettroInfo, HomeAssistant, RobotInfo } from "./types";
 
 interface CardConfig {
   type: string;
@@ -20,7 +21,7 @@ interface CardConfig {
   header?: boolean;
 }
 
-type DialogTag = "elettro-settings-dialog" | "elettro-stats-dialog" | "elettro-charts-dialog";
+type DialogTag = "elettro-settings-dialog" | "elettro-stats-dialog" | "elettro-charts-dialog" | "elettro-robot-dialog";
 
 /** Scheda degli elettrodomestici: una tessera per ognuno con immagine, stato, potenza e consumi; tocco = statistiche, pulsante = grafici. */
 export class ElettrodomesticiCard extends LitElement {
@@ -122,6 +123,35 @@ export class ElettrodomesticiCard extends LitElement {
     void this.hass.callWS({ type: "elettrodomestici/action", entry_id: this._info?.entry_id, key, action: "acknowledge" });
   }
 
+  private _robotCall(domain: string, service: string, entity: string): void {
+    void this.hass.callService(domain, service, { entity_id: entity });
+  }
+
+  private _robotTile(r: RobotInfo, m: RobotModel) {
+    const detail = m.room || m.area !== null || m.minutes !== null
+      ? [m.room, m.area !== null ? `${fmt(m.area, 0)} m²` : "", m.minutes !== null ? `${fmt(m.minutes, 0)} min` : ""].filter(Boolean).join(" · ")
+      : m.charging ? "In carica" : "";
+    return html`
+      <div class="tile ${m.tone}">
+        <button class="main" aria-label=${`Gestisci ${m.name}`} @click=${() => void this._open("elettro-robot-dialog", r.key)}>
+          <span class="img">${unsafeSVG(applianceSvg("aspirapolvere", m.state))}</span>
+          <span class="info">
+            <span class="n">${m.name}</span>
+            <span class="badge ${m.tone}">${m.statusLine}</span>
+            <span class="pw ${m.activity === "cleaning" ? "on" : ""}">${m.battery === null ? "–" : html`${m.charging ? html`<ha-icon icon="mdi:lightning-bolt"></ha-icon>` : nothing}${fmt(m.battery, 0)} %`}</span>
+            <span class="row">${detail || "Batteria"}</span>
+          </span>
+        </button>
+        ${m.lowConsumables.length ? html`<div class="warn"><ha-icon icon="mdi:wrench-clock"></ha-icon>Da sostituire o pulire: ${m.lowConsumables.join(", ")}</div>` : nothing}
+        <div class="acts">
+          ${m.canPause ? html`<button class="a" @click=${() => this._robotCall("vacuum", "pause", r.entity)}><ha-icon icon="mdi:pause"></ha-icon>Pausa</button>` : nothing}
+          ${m.canStart ? html`<button class="a ok" @click=${() => this._robotCall("vacuum", "start", r.entity)}><ha-icon icon="mdi:play"></ha-icon>${m.activity === "paused" ? "Riprendi" : "Avvia"}</button>` : nothing}
+          ${m.canHome ? html`<button class="a" @click=${() => this._robotCall("vacuum", "return_to_base", r.entity)}><ha-icon icon="mdi:home-import-outline"></ha-icon>Base</button>` : nothing}
+          <button class="a" aria-label=${`Gestisci ${m.name}`} @click=${() => void this._open("elettro-robot-dialog", r.key)}><ha-icon icon="mdi:tune-variant"></ha-icon>Gestisci</button>
+        </div>
+      </div>`;
+  }
+
   private _tile(t: TileModel) {
     return html`
       <div class="tile ${t.tone}">
@@ -155,7 +185,8 @@ export class ElettrodomesticiCard extends LitElement {
     const wanted = Array.isArray(this._config.appliances) ? this._config.appliances : null;
     const shown = wanted ? this._info.appliances.filter((a) => wanted.includes(a.key)) : this._info.appliances;
     const tiles = shown.map((a) => tileModel(a, this.hass.states, this._info?.types, this._now));
-    const grid = html`<div class="grid" style=${`grid-template-columns:${gridTemplate(this._config.columns)}`}>${tiles.map((t) => this._tile(t))}</div>`;
+    const robots = (this._info.robots ?? []).filter((r) => !wanted || wanted.includes(r.key));
+    const grid = html`<div class="grid" style=${`grid-template-columns:${gridTemplate(this._config.columns)}`}>${tiles.map((t) => this._tile(t))}${robots.map((r) => this._robotTile(r, robotModel(r, this.hass)))}</div>`;
     if (this._config.header === false) return html`<ha-card><div class="pad compact">${grid}</div></ha-card>`;
     return html`
       <ha-card>
@@ -167,7 +198,7 @@ export class ElettrodomesticiCard extends LitElement {
             </div>
             <button class="ib" aria-label="Preferenze" @click=${() => void this._open("elettro-settings-dialog")}><ha-icon icon="mdi:cog"></ha-icon></button>
           </div>
-          ${tiles.length === 0
+          ${tiles.length + robots.length === 0
             ? html`<button class="empty" @click=${() => void this._open("elettro-settings-dialog")}><ha-icon icon="mdi:plus-circle-outline"></ha-icon>Aggiungi il primo elettrodomestico</button>`
             : grid}
         </div>
@@ -228,8 +259,8 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "elettrodomestici-card",
   name: "Elettrodomestici",
-  description: "Lavatrice, lavastoviglie, asciugatrice, forno, frigorifero e microonde: stato, fasi, consumi, costi, statistiche e grafici.",
+  description: "Lavatrice, lavastoviglie, asciugatrice, forno, frigorifero, microonde e robot aspirapolvere: stato, consumi, costi, statistiche, grafici e controllo.",
 });
 
 // eslint-disable-next-line no-console
-console.info("%c ELETTRODOMESTICI %c v0.2.0 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
+console.info("%c ELETTRODOMESTICI %c v0.4.0 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");

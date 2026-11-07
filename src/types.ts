@@ -1,4 +1,4 @@
-export type ApplianceType = "lavatrice" | "lavastoviglie" | "asciugatrice" | "forno" | "frigorifero" | "microonde";
+export type ApplianceType = "lavatrice" | "lavastoviglie" | "asciugatrice" | "forno" | "frigorifero" | "microonde" | "aspirapolvere";
 export type MachineState = "spento" | "in_funzione" | "terminato" | "non_disponibile";
 
 export interface HassState {
@@ -13,6 +13,8 @@ export interface HomeAssistant {
   services?: Record<string, Record<string, unknown>>;
   callService(domain: string, service: string, data?: Record<string, unknown>): Promise<unknown>;
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
+  /** testo nella lingua dell'utente di uno stato (anche di un'opzione di un select): c'è nelle versioni recenti di Home Assistant */
+  formatEntityState?: (stateObj: HassState, state?: string) => string;
 }
 
 export interface Extra {
@@ -88,6 +90,13 @@ export interface ApplianceInfo extends ApplianceCfg, Snapshot {
   maker_entities?: Record<string, string>;
 }
 
+/** Robot aspirapolvere: niente presa, si guida dall'entità vacuum.* e da quelle del suo dispositivo (per "dominio.chiave"). */
+export interface RobotInfo extends ApplianceCfg {
+  key: string;
+  kind: "robot";
+  robot_entities: Record<string, string>;
+}
+
 export interface TypeDefaults {
   label: string;
   icon: string;
@@ -105,6 +114,7 @@ export interface TypeDefaults {
   heat_w: number;
   maint_cycles: number;
   alert_minutes: number;
+  robot?: boolean;
 }
 
 export interface ElettroInfo {
@@ -115,6 +125,7 @@ export interface ElettroInfo {
   notify_services: string[];
   types: Record<ApplianceType, TypeDefaults>;
   appliances: ApplianceInfo[];
+  robots?: RobotInfo[];
   makers?: MakerDevice[];
 }
 

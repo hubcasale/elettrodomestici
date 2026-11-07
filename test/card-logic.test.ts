@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   appliancesError, energySensors, extraValue, fmt, fmtEur, fmtKwh, formatDuration, formatHours, liveSnapshot, metricText, newAppliance,
-  counters, gridColumns, gridTemplate, guessOldPackage, makerView, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
+  counters, consumables, gridColumns, gridTemplate, guessOldPackage, makerView, robotModel, robotRooms, robotShortcuts, robotText, appliancesError, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
 } from "../src/card-logic";
 import { applianceSvg } from "../src/appliance-svg";
-import type { ApplianceInfo, HassState, TypeDefaults } from "../src/types";
+import type { ApplianceInfo, HassState, RobotInfo, TypeDefaults } from "../src/types";
 
 const DEF: TypeDefaults = {
   label: "Lavatrice", icon: "mdi:washing-machine", off_label: "Spenta", done_label: "Da svuotare", has_finished: true, notify: true,
@@ -225,4 +225,67 @@ test("integrazione del costruttore: in pausa con la presa a riposo si vede in fu
   assert.equal(b.state, "spento");
   assert.deepEqual(b.extras.map((x) => x.label), ["Electrolux"]);
   assert.equal(makerView({ maker: null, maker_entities: ents }, paused), null);
+});
+
+
+const ROBOT = (over: Partial<RobotInfo> = {}): RobotInfo => ({
+  id: "robot", key: "robot", kind: "robot", type: "aspirapolvere", name: "Robot", entity: "vacuum.r", energy_entity: null, start_w: 0, stop_w: 0, start_delay: 0, end_delay: 1,
+  min_cycle: 0, heat_w: 1, maint_cycles: 0, alert_minutes: 0, notify: false, extras: [], maker: null, maker_device: null,
+  robot_entities: {
+    "sensor.battery_level": "sensor.bat", "sensor.error": "sensor.err", "sensor.cleaned_area": "sensor.area", "sensor.cleaning_time": "sensor.time", "sensor.current_room": "sensor.room",
+    "binary_sensor.charging_state": "binary_sensor.chg", "sensor.filter_left": "sensor.filt", "sensor.filter_time_left": "sensor.filt_t", "button.reset_filter": "button.rf", "sensor.main_brush_left": "sensor.mb",
+  },
+  ...over,
+});
+
+test("robot: in pulizia mostra batteria, stanza, area e tempo; errore e consumabili bassi", () => {
+  const states: Record<string, HassState> = {
+    "vacuum.r": st("cleaning"), "sensor.bat": st("64"), "sensor.err": st("no_error", { description: "Nessun errore" }), "sensor.area": st("14"), "sensor.time": st("18"),
+    "sensor.room": st("Cucina"), "binary_sensor.chg": st("off"), "sensor.filt": st("8"), "sensor.filt_t": st("12"), "sensor.mb": st("83"),
+  };
+  const m = robotModel(ROBOT(), { states });
+  assert.equal(m.activity, "cleaning");
+  assert.equal(m.state, "in_funzione");
+  assert.equal(m.statusLine, "In pulizia");
+  assert.equal(m.battery, 64);
+  assert.equal(m.room, "Cucina");
+  assert.equal(m.area, 14);
+  assert.equal(m.minutes, 18);
+  assert.deepEqual(m.lowConsumables, ["Filtro"]);
+  assert.deepEqual([m.canStart, m.canPause, m.canStop, m.canHome], [false, true, true, true]);
+  const c = consumables(ROBOT(), states);
+  assert.deepEqual(c.map((x) => [x.label, x.pct, x.hoursLeft, x.low]), [["Spazzola principale", 83, null, false], ["Filtro", 8, 12, true]]);
+});
+
+test("robot: alla base, in errore, non disponibile", () => {
+  const docked = robotModel(ROBOT(), { states: { "vacuum.r": st("docked"), "sensor.bat": st("100"), "binary_sensor.chg": st("on"), "sensor.room": st("Cucina") } });
+  assert.equal(docked.state, "spento");
+  assert.equal(docked.charging, true);
+  assert.equal(docked.room, "");
+  assert.deepEqual([docked.canStart, docked.canPause, docked.canStop, docked.canHome], [true, false, false, false]);
+  const err = robotModel(ROBOT(), { states: { "vacuum.r": st("error"), "sensor.err": st("cliff", { description: "Sensori anticaduta sporchi" }) } });
+  assert.equal(err.tone, "bad");
+  assert.match(err.statusLine, /Errore · Sensori anticaduta sporchi/);
+  const gone = robotModel(ROBOT(), { states: {} });
+  assert.equal(gone.state, "non_disponibile");
+  assert.equal(gone.statusLine, "Non disponibile");
+  assert.equal(gone.canStart, false);
+});
+
+test("robot: stanze, scorciatoie, testo tradotto e validazione", () => {
+  const v = st("docked", {
+    rooms: { "Mappa 1": [{ id: 1, name: "Soggiorno", icon: "mdi:sofa" }, { id: 2, name: "Cucina" }], "Mappa 2": [{ id: 9, name: "Piano di sopra" }] },
+    shortcuts: { "32": { id: 32, name: "Mocio", running: true } },
+  });
+  assert.deepEqual(robotRooms(v, "Mappa 1").map((r) => r.name), ["Soggiorno", "Cucina"]);
+  assert.deepEqual(robotRooms(v, "Mappa 2").map((r) => r.id), [9]);
+  assert.deepEqual(robotRooms(v, "boh").map((r) => r.id), [1, 2]);
+  assert.deepEqual(robotShortcuts(v), [{ id: 32, name: "Mocio", running: true }]);
+  assert.deepEqual(robotRooms(undefined, ""), []);
+  assert.equal(robotText({ states: { "select.x": st("slightly_dry") } }, "select.x"), "Slightly dry");
+  assert.equal(robotText({ states: { "select.x": st("slightly_dry") }, formatEntityState: (_s, o) => `T:${o ?? "stato"}` }, "select.x", "wet"), "T:wet");
+  assert.equal(robotText({ states: { "select.x": st("unavailable") } }, "select.x"), "");
+  const base = { type: "aspirapolvere", name: "R", stop_w: 0, start_w: 0 };
+  assert.match(appliancesError([{ ...base, entity: "sensor.x" } as never]) ?? "", /vacuum/);
+  assert.equal(appliancesError([{ ...base, entity: "vacuum.x" } as never]), null);
 });

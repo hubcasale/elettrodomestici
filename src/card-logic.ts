@@ -1,10 +1,10 @@
 // Logica pura della scheda: etichette, tessere, frasi, statistiche, assi e campionamento dei grafici.
 // Nessuna dipendenza da Lit o da Home Assistant: si prova con node:test.
 import type {
-  ApplianceCfg, ApplianceInfo, ApplianceType, DayRec, HassState, MachineState, RawState, Snapshot, TypeDefaults,
+  ApplianceCfg, ApplianceInfo, ApplianceType, DayRec, HassState, HomeAssistant, MachineState, RawState, RobotInfo, Snapshot, TypeDefaults,
 } from "./types";
 
-export const TYPES: ApplianceType[] = ["lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde"];
+export const TYPES: ApplianceType[] = ["lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde", "aspirapolvere"];
 
 export const TYPE_ICON: Record<ApplianceType, string> = {
   lavatrice: "mdi:washing-machine",
@@ -13,6 +13,7 @@ export const TYPE_ICON: Record<ApplianceType, string> = {
   forno: "mdi:stove",
   frigorifero: "mdi:fridge",
   microonde: "mdi:microwave",
+  aspirapolvere: "mdi:robot-vacuum",
 };
 export const TYPE_LABEL: Record<ApplianceType, string> = {
   lavatrice: "Lavatrice",
@@ -21,6 +22,7 @@ export const TYPE_LABEL: Record<ApplianceType, string> = {
   forno: "Forno",
   frigorifero: "Frigorifero",
   microonde: "Microonde",
+  aspirapolvere: "Aspirapolvere",
 };
 
 export const STATES: MachineState[] = ["spento", "in_funzione", "terminato", "non_disponibile"];
@@ -380,7 +382,8 @@ const ENTITY_RE = /^[a-z_]+\.[a-z0-9_]+$/;
 export function appliancesError(list: ApplianceCfg[]): string | null {
   const seen = new Set<string>();
   for (const a of list) {
-    if (!ENTITY_RE.test(a.entity)) return `${a.name}: scegli il sensore di potenza della presa.`;
+    const robot = a.type === "aspirapolvere";
+    if (!ENTITY_RE.test(a.entity) || (robot && !a.entity.startsWith("vacuum."))) return robot ? `${a.name}: scegli il robot (un'entità vacuum.…).` : `${a.name}: scegli il sensore di potenza della presa.`;
     if (seen.has(a.entity)) return `${a.name}: questo sensore è già usato da un altro elettrodomestico.`;
     seen.add(a.entity);
     if (a.stop_w > a.start_w) return `${a.name}: la soglia di spegnimento non può superare quella di avvio.`;
@@ -405,6 +408,7 @@ export const powerSensors = (states: Record<string, HassState>, exclude: string[
   candidates(states, (id, st) => id.startsWith("sensor.") && (st.attributes.device_class === "power" || ["W", "kW"].includes(String(st.attributes.unit_of_measurement))), exclude);
 export const energySensors = (states: Record<string, HassState>): Candidate[] =>
   candidates(states, (id, st) => id.startsWith("sensor.") && (st.attributes.device_class === "energy" || ["Wh", "kWh", "MWh"].includes(String(st.attributes.unit_of_measurement))));
+export const vacuumEntities = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] => candidates(states, (id) => id.startsWith("vacuum."), exclude);
 export const extraSensors = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] =>
   candidates(states, (id) => /^(sensor|binary_sensor|select|input_select|input_text|number|text|climate)\./.test(id), exclude);
 export const counters = (states: Record<string, HassState>): Candidate[] => candidates(states, (id) => id.startsWith("counter."));
@@ -417,6 +421,7 @@ const OLD_WORDS: Record<ApplianceType, RegExp> = {
   forno: /forno|oven/,
   frigorifero: /frigo|fridge/,
   microonde: /micro/,
+  aspirapolvere: /^$/,
 };
 /** Il contatore dei cicli e il sensore di stato di un vecchio pacchetto basato su contatori e sensori di stato, se ci sono (id che parlano di quel tipo). */
 export function guessOldPackage(states: Record<string, HassState>, type: ApplianceType): { counter: string; status: string } {
@@ -606,4 +611,153 @@ export function linePath(values: (number | null)[], xOf: (i: number) => number, 
     pen = true;
   }
   return d;
+}
+
+
+// ---- robot aspirapolvere
+export type RobotActivity = "cleaning" | "docked" | "idle" | "paused" | "returning" | "error" | "unavailable";
+const ACTIVITIES: RobotActivity[] = ["cleaning", "docked", "idle", "paused", "returning", "error"];
+export const ROBOT_STATE_LABEL: Record<RobotActivity, string> = {
+  cleaning: "In pulizia", docked: "Alla base", idle: "Fermo", paused: "In pausa", returning: "Torna alla base", error: "Errore", unavailable: "Non disponibile",
+};
+
+/** Entità del robot per "dominio.chiave" (es. sensor.battery_level): vuoto se il robot non ha quella funzione. */
+export function robotEnt(app: Pick<RobotInfo, "robot_entities">, key: string): string {
+  return app.robot_entities?.[key] ?? "";
+}
+
+export function humanize(v: string): string {
+  const t = v.replace(/_/g, " ").trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** Valore di un'entità nella lingua dell'utente (con la traduzione di Home Assistant se c'è), vuoto se non disponibile. */
+export function robotText(hass: Pick<HomeAssistant, "states" | "formatEntityState"> | undefined, id: string, option?: string): string {
+  const st = id ? hass?.states[id] : undefined;
+  if (!st || ["unknown", "unavailable", ""].includes(st.state)) return "";
+  const v = option ?? st.state;
+  if (hass?.formatEntityState) {
+    try {
+      return hass.formatEntityState(st, option);
+    } catch {
+      /* ripiega sul testo semplice */
+    }
+  }
+  return humanize(v);
+}
+
+export function robotNumber(states: Record<string, HassState>, id: string): number | null {
+  const st = id ? states[id] : undefined;
+  return st ? toNumber(st.state) : null;
+}
+
+export interface ConsumableRow {
+  key: string;
+  label: string;
+  pct: number | null;
+  hoursLeft: number | null;
+  reset: string;
+  low: boolean;
+}
+export const CONSUMABLES: { key: string; label: string; time: string; reset: string }[] = [
+  { key: "main_brush_left", label: "Spazzola principale", time: "main_brush_time_left", reset: "reset_main_brush" },
+  { key: "side_brush_left", label: "Spazzola laterale", time: "side_brush_time_left", reset: "reset_side_brush" },
+  { key: "filter_left", label: "Filtro", time: "filter_time_left", reset: "reset_filter" },
+  { key: "sensor_dirty_left", label: "Sensori", time: "sensor_dirty_time_left", reset: "reset_sensor" },
+  { key: "wheel_dirty_left", label: "Ruote", time: "wheel_dirty_time_left", reset: "reset_wheel" },
+];
+export function consumables(app: RobotInfo, states: Record<string, HassState>): ConsumableRow[] {
+  const rows: ConsumableRow[] = [];
+  for (const c of CONSUMABLES) {
+    const id = robotEnt(app, `sensor.${c.key}`);
+    if (!id) continue;
+    const pct = robotNumber(states, id);
+    rows.push({ key: c.key, label: c.label, pct, hoursLeft: robotNumber(states, robotEnt(app, `sensor.${c.time}`)), reset: robotEnt(app, `button.${c.reset}`), low: pct !== null && pct <= 10 });
+  }
+  return rows;
+}
+
+export interface RobotRoom {
+  id: number;
+  name: string;
+  icon: string;
+}
+export interface RobotShortcut {
+  id: number;
+  name: string;
+  running: boolean;
+}
+export function robotRooms(vacuum: HassState | undefined, selectedMap: string): RobotRoom[] {
+  const all = vacuum?.attributes.rooms;
+  if (!all || typeof all !== "object") return [];
+  const maps = all as Record<string, unknown>;
+  const list = maps[selectedMap] ?? Object.values(maps)[0];
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((r): r is { id: number; name?: string; icon?: string } => !!r && typeof r === "object" && typeof (r as { id?: unknown }).id === "number")
+    .map((r) => ({ id: r.id, name: String(r.name ?? `Stanza ${r.id}`), icon: typeof r.icon === "string" ? r.icon : "mdi:floor-plan" }));
+}
+export function robotShortcuts(vacuum: HassState | undefined): RobotShortcut[] {
+  const all = vacuum?.attributes.shortcuts;
+  if (!all || typeof all !== "object") return [];
+  return Object.values(all as Record<string, { id?: unknown; name?: unknown; running?: unknown }>)
+    .filter((s) => s && typeof s.id === "number")
+    .map((s) => ({ id: s.id as number, name: String(s.name ?? `Scorciatoia ${s.id}`), running: s.running === true }));
+}
+
+export interface RobotModel {
+  key: string;
+  name: string;
+  activity: RobotActivity;
+  tone: Tone;
+  state: MachineState;
+  statusLine: string;
+  battery: number | null;
+  charging: boolean;
+  room: string;
+  area: number | null;
+  minutes: number | null;
+  error: string;
+  lowConsumables: string[];
+  canStart: boolean;
+  canPause: boolean;
+  canStop: boolean;
+  canHome: boolean;
+}
+
+export function robotModel(app: RobotInfo, hass: Pick<HomeAssistant, "states" | "formatEntityState">): RobotModel {
+  const states = hass.states;
+  const st = states[app.entity];
+  const raw = st?.state ?? "unavailable";
+  const activity: RobotActivity = (ACTIVITIES as string[]).includes(raw) ? (raw as RobotActivity) : "unavailable";
+  const working = activity === "cleaning" || activity === "returning" || activity === "paused";
+  const errId = robotEnt(app, "sensor.error");
+  const errSt = errId ? states[errId] : undefined;
+  const errText = errSt && errSt.state !== "no_error" && !["unknown", "unavailable"].includes(errSt.state)
+    ? (typeof errSt.attributes.description === "string" && errSt.attributes.description ? (errSt.attributes.description as string) : robotText(hass, errId))
+    : "";
+  const battery = robotNumber(states, robotEnt(app, "sensor.battery_level"));
+  const chargeId = robotEnt(app, "binary_sensor.charging_state");
+  const area = working ? robotNumber(states, robotEnt(app, "sensor.cleaned_area")) : null;
+  const mins = working ? robotNumber(states, robotEnt(app, "sensor.cleaning_time")) : null;
+  const tone: Tone = activity === "error" || errText ? "bad" : working ? "run" : "off";
+  return {
+    key: app.key,
+    name: app.name,
+    activity,
+    tone,
+    state: activity === "unavailable" ? "non_disponibile" : working ? "in_funzione" : "spento",
+    statusLine: errText && activity !== "cleaning" ? `${ROBOT_STATE_LABEL[activity]} · ${errText}` : ROBOT_STATE_LABEL[activity],
+    battery,
+    charging: chargeId ? states[chargeId]?.state === "on" : false,
+    room: working ? robotText(hass, robotEnt(app, "sensor.current_room")) : "",
+    area,
+    minutes: mins,
+    error: errText,
+    lowConsumables: consumables(app, states).filter((c) => c.low).map((c) => c.label),
+    canStart: activity === "docked" || activity === "idle" || activity === "paused",
+    canPause: activity === "cleaning" || activity === "returning",
+    canStop: working,
+    canHome: activity !== "docked" && activity !== "returning" && activity !== "unavailable",
+  };
 }

@@ -1,6 +1,6 @@
 # Elettrodomestici
 
-Integrazione per Home Assistant (HACS) e scheda Lovelace per **lavatrice, lavastoviglie, asciugatrice, forno, frigorifero e microonde**.
+Integrazione per Home Assistant (HACS) e scheda Lovelace per **lavatrice, lavastoviglie, asciugatrice, forno, frigorifero, microonde** e per il **robot aspirapolvere**.
 L'elettrodomestico non va acceso né spento da Home Assistant: la presa intelligente serve **solo a misurare la potenza**.
 
 ## Come funziona
@@ -55,6 +55,19 @@ rimanente** (la barra di avanzamento si calcola sul tempo che resta), mentre **c
 Gli apparecchi Electrolux si scollegano dal cloud quando sono spenti: in quel caso i loro sensori sono "sconosciuti" e la tessera
 mostra una riga "apparecchio spento o non collegato", continuando a funzionare con la sola potenza della presa.
 Per altre entità (programma di un'altra marca, ecc.) restano i *dispositivi collegati*.
+
+## Robot aspirapolvere
+Dalle Preferenze si aggiunge **Aspirapolvere** scegliendo l'entità `vacuum.…` del robot (non serve nessuna presa). Sulla scheda compare con stato,
+batteria, stanza e area della pulizia in corso, e pulsanti rapidi (Avvia/Pausa, Base). Toccandolo si apre la **gestione completa**, a schede:
+
+* **Controllo**: Avvia/Riprendi, Pausa, Stop, Alla base, Trovalo; scorciatoie; modalità, aspirazione, umidità del panno, percorso, temperatura dell'acqua; mappa.
+* **Stanze**: scegli una o più stanze e il numero di passate, poi "Pulisci".
+* **Base**: stato di serbatoi, sacchetto e panno; svuota la polvere, lava e asciuga i panni; impostazioni della base.
+* **Manutenzione**: spazzole, filtro, sensori e ruote con la percentuale che resta e "Segna come sostituito".
+* **Altro**: interruttori (non disturbare, blocco bambini, tappeti, ostacoli...), volume e statistiche (pulizie, superficie, tempo).
+
+Le entità del robot (batteria, selezioni, consumabili, base) si trovano da sole dal suo dispositivo: oggi sono riconosciute quelle dell'integrazione
+[Dreame](https://github.com/Tasshack/dreame-vacuum); con un'altra marca restano comunque i comandi base e lo stato.
 
 ## Entità, eventi, notifiche
 

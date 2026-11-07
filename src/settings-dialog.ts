@@ -2,7 +2,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { dialogStyles } from "./dialog-style";
 import {
-  TYPES, TYPE_ICON, TYPE_LABEL, appliancesError, energySensors, extraSensors, fmt, formatDuration, friendlyName, newAppliance, notifyServices,
+  TYPES, TYPE_ICON, TYPE_LABEL, appliancesError, energySensors, extraSensors, vacuumEntities, fmt, formatDuration, friendlyName, newAppliance, notifyServices,
   powerSensors, priceSensors, counters, statusSensors, guessOldPackage,
 } from "./card-logic";
 import type { ApplianceCfg, ApplianceType, ElettroInfo, HomeAssistant } from "./types";
@@ -43,7 +43,7 @@ export class ElettroSettingsDialog extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("keydown", this._onKey);
-    this._list = this.info.appliances.map((a) => ({
+    this._list = [...this.info.appliances, ...(this.info.robots ?? [])].map((a) => ({
       id: a.id, type: a.type, name: a.name, entity: a.entity, energy_entity: a.energy_entity, start_w: a.start_w, stop_w: a.stop_w,
       start_delay: a.start_delay, end_delay: a.end_delay, min_cycle: a.min_cycle, heat_w: a.heat_w, maint_cycles: a.maint_cycles,
       alert_minutes: a.alert_minutes, notify: a.notify, extras: a.extras.map((x) => ({ ...x })), maker: a.maker ?? null, maker_device: a.maker_device ?? null,
@@ -79,8 +79,9 @@ export class ElettroSettingsDialog extends LitElement {
     const type = this._addType;
     const entity = this._addEntity.trim();
     if (!type) return;
-    if (!/^[a-z_]+\.[a-z0-9_]+$/.test(entity)) {
-      this._error = "Scegli dall'elenco il sensore di potenza della presa.";
+    const robot = this.info.types[type]?.robot === true;
+    if (!/^[a-z_]+\.[a-z0-9_]+$/.test(entity) || (robot && !entity.startsWith("vacuum."))) {
+      this._error = robot ? "Scegli dall'elenco il robot (un'entità vacuum.…)." : "Scegli dall'elenco il sensore di potenza della presa.";
       return;
     }
     if (this._list.some((a) => a.entity === entity)) {
@@ -229,7 +230,23 @@ export class ElettroSettingsDialog extends LitElement {
         : nothing}`;
   }
 
+  private _robotEditor(a: ApplianceCfg) {
+    const live = this.hass.states[a.entity];
+    const exclude = this._list.filter((x) => x.id !== a.id).map((x) => x.entity);
+    return html`
+      <div class="ed">
+        <div class="link"><ha-icon icon="mdi:robot-vacuum"></ha-icon>Robot: <b>${friendlyName(this.hass.states, a.entity)}</b> <code>${a.entity}</code> · ora ${live ? live.state : "non disponibile"}</div>
+        <label class="f">Nome<input class="txt" .value=${a.name} @change=${(e: Event) => this._patch(a.id, { name: (e.target as HTMLInputElement).value.trim() || a.name })} /></label>
+        <label class="f">Entità del robot
+          <input class="txt" list=${`dl-rb-${a.id}`} .value=${a.entity} @change=${(e: Event) => this._patch(a.id, { entity: (e.target as HTMLInputElement).value.trim() })} />
+          <datalist id=${`dl-rb-${a.id}`}>${vacuumEntities(this.hass.states, exclude).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist>
+          <span class="hint">Comandi, mappa, stanze, consumabili e base si ricavano da sole dall'integrazione del robot (per ora provata con Dreame).</span></label>
+        <button class="btn del" @click=${() => this._remove(a.id)}>Togli dall'elenco</button>
+      </div>`;
+  }
+
   private _editor(a: ApplianceCfg) {
+    if (this.info.types[a.type]?.robot) return this._robotEditor(a);
     const d = this.info.types[a.type];
     const live = this.hass.states[a.entity];
     const exclude = this._list.filter((x) => x.id !== a.id).map((x) => x.entity);
@@ -316,11 +333,17 @@ export class ElettroSettingsDialog extends LitElement {
             </div>
             ${def
               ? html`<div class="addbox">
-                  <label class="f">Sensore di potenza della presa (W)
-                    <input class="txt" list="dl-add" placeholder="sensor.presa_…_potenza" .value=${this._addEntity} @input=${(e: Event) => (this._addEntity = (e.target as HTMLInputElement).value)} />
-                    <datalist id="dl-add">${powerSensors(this.hass.states, used).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>
+                  ${def.robot
+                    ? html`<label class="f">Robot (entità vacuum)
+                        <input class="txt" list="dl-add" placeholder="vacuum.…" .value=${this._addEntity} @input=${(e: Event) => (this._addEntity = (e.target as HTMLInputElement).value)} />
+                        <datalist id="dl-add">${vacuumEntities(this.hass.states, used).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>`
+                    : html`<label class="f">Sensore di potenza della presa (W)
+                        <input class="txt" list="dl-add" placeholder="sensor.presa_…_potenza" .value=${this._addEntity} @input=${(e: Event) => (this._addEntity = (e.target as HTMLInputElement).value)} />
+                        <datalist id="dl-add">${powerSensors(this.hass.states, used).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>`}
                   <label class="f">Nome (facoltativo)<input class="txt" placeholder=${def.label} .value=${this._addName} @input=${(e: Event) => (this._addName = (e.target as HTMLInputElement).value)} /></label>
-                  <div class="hint">Parte oltre ${def.start_w} W${def.phases.length > 1 ? `, fasi: ${def.phases.join(" → ")}` : ""}${def.has_finished ? `, finisce dopo ${formatDuration(def.end_delay)} sotto ${def.stop_w} W` : ""}. Le soglie si possono cambiare dopo.</div>
+                  ${def.robot
+                    ? html`<div class="hint">Sulla scheda compare con stato, batteria e comandi rapidi; toccandolo si apre la gestione completa (stanze, impostazioni, base, consumabili).</div>`
+                    : html`<div class="hint">Parte oltre ${def.start_w} W${def.phases.length > 1 ? `, fasi: ${def.phases.join(" → ")}` : ""}${def.has_finished ? `, finisce dopo ${formatDuration(def.end_delay)} sotto ${def.stop_w} W` : ""}. Le soglie si possono cambiare dopo.</div>`}
                   <button class="btn primary" ?disabled=${!this._addEntity.trim()} @click=${() => this._add()}>Aggiungi ${def.label.toLowerCase()}</button>
                 </div>`
               : nothing}

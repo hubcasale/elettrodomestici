@@ -71,7 +71,35 @@ if (mk) {
     [["sensor.asc_stato",on?"Running":"unknown"],["sensor.asc_fase",on?"Dry":"unknown"],["sensor.asc_resto",on?"42":"unknown",{unit_of_measurement:"min"}],["select.asc_prog",on?"Outd Proof Pr Outdoor":"unknown"],["binary_sensor.asc_porta",on?"off":"unknown"],["binary_sensor.asc_conn",on?"on":"off"]]
       .forEach(([id,v,at])=>{ states[id]={entity_id:id,state:v,attributes:at||{}}; }); }
 }
-const info = { entry_id:"e1", title:"Elettrodomestici", price_kwh:0.3, price_entity:"", notify_services:["notify.mobile_app_pixel"], types, makers:[{maker:"electrolux",label:"Electrolux",device_id:"dev1",name:"Asciugatrice"}], appliances: params.get("empty")==="1"?[]:appliances };
+// robot aspirapolvere (?robot=docked|cleaning|error)
+const rb = params.get("robot");
+const robots = [];
+if (rb) {
+  const P = "00_"; const E = (d,k)=>`${d}.d20_${k}`;
+  const set = (id, state, attributes={}) => { states[id] = { entity_id:id, state, attributes }; };
+  const act = rb==="cleaning" ? "cleaning" : rb==="error" ? "error" : "docked";
+  set("vacuum.d20_ultra", act, { friendly_name:"D20 Ultra",
+    rooms:{"Mappa 1":[{id:1,name:"Soggiorno",icon:"mdi:sofa-outline"},{id:2,name:"Cucina",icon:"mdi:chef-hat"},{id:3,name:"Camera",icon:"mdi:bed-outline"}]},
+    shortcuts:{"32":{id:32,name:"Passa mocio dopo aspirapolvere",running:false}} });
+  const sensors = {battery_level:[act==="cleaning"?"64":"100",{unit_of_measurement:"%"}], current_room:[act==="cleaning"?"Cucina":"unknown"], cleaned_area:[act==="cleaning"?"14":"0",{unit_of_measurement:"m²"}], cleaning_time:[act==="cleaning"?"18":"0",{unit_of_measurement:"min"}],
+    state:[act==="cleaning"?"sweeping_and_mopping":"charging_completed"], error:[act==="error"?"cliff":"no_error",{description:act==="error"?"Sensori anticaduta bloccati o sporchi":"Nessun errore"}],
+    clean_water_tank_status:["low_water"], dirty_water_tank_status:["installed"], dust_bag_status:["installed"], mop_pad:["installed"], self_wash_base_status:["idle"], auto_empty_status:["idle"],
+    main_brush_left:["83"], main_brush_time_left:["249"], side_brush_left:["74"], side_brush_time_left:["149"], filter_left:["8"], filter_time_left:["12"], sensor_dirty_left:["31"], sensor_dirty_time_left:["9"], wheel_dirty_left:["31"], wheel_dirty_time_left:["0.4"],
+    cleaning_count:["69"], total_cleaned_area:["1477"], total_cleaning_time:["3036"], cleaning_history:["2026-10-08T13:42:43+00:00"], first_cleaning_date:["2026-05-31T11:45:32+00:00"]};
+  const robotEnts = {};
+  Object.entries(sensors).forEach(([k,[v,at]])=>{ set(E("sensor",k), v, {friendly_name:k, ...(at||{})}); robotEnts["sensor."+k]=E("sensor",k); });
+  set(E("binary_sensor","charging_state"), act==="cleaning"?"off":"on"); robotEnts["binary_sensor.charging_state"]=E("binary_sensor","charging_state");
+  const selects = {cleaning_mode:["sweeping_and_mopping",["sweeping","mopping","sweeping_and_mopping","mopping_after_sweeping"]], suction_level:["turbo",["quiet","standard","strong","turbo","full_power"]], mop_pad_humidity:["slightly_dry",["slightly_dry","moist","wet"]], cleaning_route:["standard",["quick","standard","intensive","deep"]], water_temperature:["hot",["normal","mild","warm","hot"]], auto_empty_mode:["high_frequency",["off","standard","high_frequency"]], mop_wash_level:["daily",["water_saving","daily","deep"]], drying_time:["4h",["2h","3h","4h"]], selected_map:["Mappa 1",["Mappa 1"]]};
+  Object.entries(selects).forEach(([k,[v,o]])=>{ set(E("select",k), v, {friendly_name:k, options:o}); robotEnts["select."+k]=E("select",k); });
+  ["dnd","child_lock","carpet_boost","resume_cleaning","obstacle_avoidance","auto_drying","self_clean","customized_cleaning"].forEach((k,i)=>{ set(E("switch",k), i%3===0?"off":"on"); robotEnts["switch."+k]=E("switch",k); });
+  ["start_auto_empty","self_clean","manual_drying","reset_main_brush","reset_side_brush","reset_filter","reset_sensor","reset_wheel"].forEach((k)=>{ set(E("button",k),"unknown"); robotEnts["button."+k]=E("button",k); });
+  set(E("number","volume"),"90"); robotEnts["number.volume"]=E("number","volume");
+  set(E("time","dnd_start"),"22:00:00"); set(E("time","dnd_end"),"08:00:00"); robotEnts["time.dnd_start"]=E("time","dnd_start"); robotEnts["time.dnd_end"]=E("time","dnd_end");
+  set(E("camera","map"),"2026-11-07 07:18:35",{entity_picture:"data:image/svg+xml;utf8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><rect width="300" height="200" fill="#1f2937"/><rect x="20" y="20" width="150" height="160" fill="#60a5fa" opacity=".6"/><rect x="170" y="20" width="110" height="90" fill="#34d399" opacity=".6"/><circle cx="60" cy="150" r="8" fill="#f59e0b"/></svg>')}); robotEnts["camera.map"]=E("camera","map");
+  robots.push({ id:"robot", key:"robot", kind:"robot", type:"aspirapolvere", name:"Robot", entity:"vacuum.d20_ultra", energy_entity:null, start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, notify:false, extras:[], maker:null, maker_device:null, robot_entities:robotEnts });
+  types.aspirapolvere = { label:"Aspirapolvere", icon:"mdi:robot-vacuum", off_label:"Alla base", done_label:"", has_finished:false, notify:false, maint_label:"", phases:["In pulizia"], start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, robot:true };
+}
+const info = { entry_id:"e1", title:"Elettrodomestici", price_kwh:0.3, price_entity:"", notify_services:["notify.mobile_app_pixel"], types, robots, makers:[{maker:"electrolux",label:"Electrolux",device_id:"dev1",name:"Asciugatrice"}], appliances: params.get("empty")==="1"?[]:appliances };
 function history(ids, start, end) {
   const out = {};
   ids.forEach((id) => {
@@ -88,7 +116,7 @@ const stats = { periods:{oggi:tot(1),ieri:series[88],settimana:tot(4),mese:tot(1
   summary:{count:20,avg_kwh:0.82,avg_eur:0.25,avg_seconds:6300,median_seconds:6000,min_seconds:2400,max_seconds:9200,max_kwh:1.5},
   cycles:Array.from({length:12},(_,i)=>({s:iso(now-(i+1)*86400000*1.3),e:iso(now-(i+1)*86400000*1.3+(5400+i*300)*1000),kwh:0.7+i*0.04,eur:0.21+i*0.012,pk:1800+i*20})),
   maintenance:{count:28,threshold:30,pct:93,due:false} };
-const hass = { states, services:{notify:{mobile_app_pixel:{},casa:{}}}, callService: async()=>{}, callWS: async (m) => {
+const hass = { states, services:{notify:{mobile_app_pixel:{},casa:{}}, dreame_vacuum:{vacuum_clean_segment:{},vacuum_start_shortcut:{}}}, callService: async(d,sv,data)=>{ console.log('service',d,sv,JSON.stringify(data)); }, callWS: async (m) => {
   if (m.type==="elettrodomestici/info") return info;
   if (m.type==="elettrodomestici/update") return m;
   if (m.type==="elettrodomestici/action") return {ok:true};

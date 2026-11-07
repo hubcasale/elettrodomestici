@@ -266,7 +266,7 @@ def test_cycle_roundtrip():
 
 def test_profile_defaults_cover_all_types():
     d = e.profile_defaults()
-    assert set(d) == {"lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde"}
+    assert set(d) == {"lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde", "aspirapolvere"}
     assert d["lavatrice"]["phases"] == ["Lavaggio", "Risciacquo", "Centrifuga"] and d["frigorifero"]["has_finished"] is False
 
 

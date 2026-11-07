@@ -119,6 +119,24 @@ function microwave(state: MachineState): string {
   ${state === "terminato" ? "" : ""}`;
 }
 
+function robot(state: MachineState): string {
+  const on = state === "in_funzione";
+  const ring = state === "non_disponibile" ? "#dc2626" : on ? "#f59e0b" : "#7b8494";
+  return `<rect x="14" y="96" width="92" height="30" rx="10" fill="${BODY}" stroke="${BODY_DARK}" stroke-width="2"/>
+  <rect x="22" y="104" width="76" height="8" rx="4" fill="${PANEL}" opacity=".3"/>
+  <circle cx="30" cy="119" r="3" fill="${ring}"${on ? ' class="bl"' : ""}/>
+  <g class="${on ? "sw" : ""}">
+    <circle cx="60" cy="56" r="40" fill="${BODY}" stroke="${BODY_DARK}" stroke-width="2.4"/>
+    <circle cx="60" cy="56" r="33" fill="#f4f5f7" stroke="${BODY_DARK}" stroke-width="1.4"/>
+    <circle cx="60" cy="42" r="9" fill="${GLASS}" stroke="${BODY_DARK}" stroke-width="2"/>
+    <circle cx="60" cy="42" r="3.2" fill="${ring}"${on ? ' class="bl"' : ""}/>
+    <path d="M40 66q20 12 40 0" fill="none" stroke="${PANEL}" stroke-width="2.4" stroke-linecap="round" opacity=".7"/>
+    <rect x="52" y="73" width="16" height="5" rx="2.5" fill="${ring}" opacity=".85"/>
+  </g>
+  <g class="${on ? "sp" : ""}" stroke="#8b95a3" stroke-width="2.2" stroke-linecap="round"><path d="M22 92l-8 8M22 92l-9-4M22 92l1-10"/></g>
+  ${on ? '<g fill="#38bdf8" opacity=".8"><circle class="bl" cx="98" cy="86" r="2"/><circle class="bl" cx="104" cy="74" r="2" style="animation-delay:.5s"/><circle class="bl" cx="94" cy="68" r="2" style="animation-delay:1s"/></g>' : ""}`;
+}
+
 export function applianceSvg(type: ApplianceType, state: MachineState): string {
   const body =
     type === "lavatrice" ? washer(state, false)
@@ -126,6 +144,7 @@ export function applianceSvg(type: ApplianceType, state: MachineState): string {
     : type === "lavastoviglie" ? dishwasher(state)
     : type === "forno" ? oven(state)
     : type === "frigorifero" ? fridge(state)
+    : type === "aspirapolvere" ? robot(state)
     : microwave(state);
   const dim = state === "non_disponibile" ? ' opacity=".45"' : "";
   return `<svg viewBox="0 0 120 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${type} ${state.replace("_", " ")}">${STYLE}<g${dim}>${body}</g></svg>`;

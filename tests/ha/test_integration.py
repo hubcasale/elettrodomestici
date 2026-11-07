@@ -155,7 +155,7 @@ async def test_websocket_info_update_action_stats(hass: HomeAssistant, hass_ws_c
     assert [a["key"] for a in r["appliances"]] == ["lavatrice", "frigorifero"]
     assert r["appliances"][0]["entities"]["stato"].startswith("sensor.")
     assert r["appliances"][0]["entities"]["svuotata"].startswith("button.")
-    assert set(r["types"]) == {"lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde"}
+    assert set(r["types"]) == {"lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde", "aspirapolvere"}
 
     new = APPLIANCES[:1] + [
         {"type": "forno", "name": "Forno", "entity": "sensor.presa_forno_potenza"},
@@ -307,3 +307,32 @@ async def test_manufacturer_device_is_discovered_and_resolved(hass: HomeAssistan
         "connessione": "binary_sensor.asc_connectivitystate",
     }
     assert oven["maker"] is None and oven["maker_entities"] == {}
+
+
+async def test_robot_vacuum_is_listed_with_its_entities_and_has_no_machine(hass: HomeAssistant, hass_ws_client) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    other = MockConfigEntry(domain="dreame_vacuum", title="Dreame")
+    other.add_to_hass(hass)
+    dev = dr.async_get(hass).async_get_or_create(config_entry_id=other.entry_id, identifiers={("dreame_vacuum", "r1")}, name="D20")
+    reg = er.async_get(hass)
+    reg.async_get_or_create("vacuum", "dreame_vacuum", "r1_dreame_vacuum", device_id=dev.id, config_entry=other, suggested_object_id="d20", translation_key="dreame_vacuum")
+    for dom, key, uid in (("sensor", "battery_level", "r1_battery_level"), ("select", "suction_level", "r1_suction_level"), ("button", "self_clean", "r1_self_clean"),
+                          ("switch", "self_clean", "r1_self_clean"), ("select", "suction_level", "r1_room_1_suction_level"), ("camera", "map", "r1_map_map"),
+                          ("camera", "saved_map", "r1_map_1")):
+        reg.async_get_or_create(dom, "dreame_vacuum", uid, device_id=dev.id, config_entry=other, suggested_object_id=f"d20_{uid}", translation_key=key)
+    hass.states.async_set("vacuum.d20", "docked")
+    entry = await _setup(hass, APPLIANCES + [{"type": "aspirapolvere", "name": "Robot", "entity": "vacuum.d20"}, {"type": "aspirapolvere", "name": "Storto", "entity": "sensor.no"}])
+    ctl = hass.data[DOMAIN][entry.entry_id]
+    assert set(ctl.machines) == {"lavatrice", "frigorifero"}
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "elettrodomestici/info"})
+    r = (await client.receive_json())["result"]
+    assert [a["key"] for a in r["appliances"]] == ["lavatrice", "frigorifero"]
+    assert [a["key"] for a in r["robots"]] == ["robot"]
+    robot = r["robots"][0]
+    assert robot["kind"] == "robot" and robot["entity"] == "vacuum.d20" and r["types"]["aspirapolvere"]["robot"] is True
+    ents = robot["robot_entities"]
+    assert ents["sensor.battery_level"].startswith("sensor.d20_") and ents["button.self_clean"].startswith("button.") and ents["switch.self_clean"].startswith("switch.")
+    assert ents["select.suction_level"].endswith("r1_suction_level") and ents["camera.map"].endswith("r1_map_map")
+    assert not any("saved_map" in v or "room_1" in v for v in ents.values())
