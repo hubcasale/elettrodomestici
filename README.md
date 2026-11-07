@@ -60,11 +60,10 @@ Per altre entità (programma di un'altra marca, ecc.) restano i *dispositivi col
 Dalle Preferenze si aggiunge **Aspirapolvere** scegliendo l'entità `vacuum.…` del robot (non serve nessuna presa). Sulla scheda compare con stato,
 batteria, stanza e area della pulizia in corso, e pulsanti rapidi (Avvia/Pausa, Base). Toccandolo si apre la **gestione completa**, a schede:
 
-* **Controllo**: Avvia/Riprendi, Pausa, Stop, Alla base, Trovalo; scorciatoie; modalità, aspirazione, umidità del panno, percorso, temperatura dell'acqua; mappa.
-* **Stanze**: scegli una o più stanze e il numero di passate, poi "Pulisci".
+* **Pulisci**: stato e batteria, poi scegli cosa pulire (**Tutta la casa**, una stanza o più stanze), le passate (1-3) e premi il pulsante di avvio, che dice cosa farà ("Pulisci Cucina e Camera · 2 passate"). Mentre lavora compaiono Pausa/Riprendi, Stop e Alla base; ci sono anche Trovalo, le scorciatoie, un riassunto di "Come pulisce" (modalità, aspirazione, panno) e la mappa.
+* **Impostazioni**: modalità, aspirazione, umidità del panno, percorso, temperatura dell'acqua; interruttori (non disturbare, blocco bambini, tappeti, ostacoli...) e volume.
 * **Base**: stato di serbatoi, sacchetto e panno; svuota la polvere, lava e asciuga i panni; impostazioni della base.
-* **Manutenzione**: spazzole, filtro, sensori e ruote con la percentuale che resta e "Segna come sostituito".
-* **Altro**: interruttori (non disturbare, blocco bambini, tappeti, ostacoli...), volume e statistiche (pulizie, superficie, tempo).
+* **Manutenzione**: spazzole, filtro, sensori e ruote con la percentuale che resta e "Segna come sostituito"; statistiche (pulizie, superficie, tempo).
 
 Le entità del robot (batteria, selezioni, consumabili, base) si trovano da sole dal suo dispositivo: oggi sono riconosciute quelle dell'integrazione
 [Dreame](https://github.com/Tasshack/dreame-vacuum); con un'altra marca restano comunque i comandi base e lo stato.

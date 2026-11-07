@@ -4,17 +4,16 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { applianceSvg } from "./appliance-svg";
 import { dialogStyles } from "./dialog-style";
 import {
-  consumables, fmt, formatDuration, humanize, robotEnt, robotModel, robotNumber, robotRooms, robotShortcuts, robotText,
+  consumables, fmt, formatDuration, humanize, robotEnt, robotModel, robotNumber, robotPlan, robotRooms, robotShortcuts, robotText,
 } from "./card-logic";
 import type { ElettroInfo, HassState, HomeAssistant, RobotInfo } from "./types";
 
-type Tab = "controllo" | "stanze" | "base" | "manutenzione" | "altro";
+type Tab = "pulisci" | "impostazioni" | "base" | "manutenzione";
 const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: "controllo", label: "Controllo", icon: "mdi:robot-vacuum" },
-  { key: "stanze", label: "Stanze", icon: "mdi:floor-plan" },
+  { key: "pulisci", label: "Pulisci", icon: "mdi:robot-vacuum" },
+  { key: "impostazioni", label: "Impostazioni", icon: "mdi:tune-variant" },
   { key: "base", label: "Base", icon: "mdi:home-lightning-bolt-outline" },
   { key: "manutenzione", label: "Manutenzione", icon: "mdi:wrench-clock" },
-  { key: "altro", label: "Altro", icon: "mdi:dots-horizontal" },
 ];
 
 /** Impostazioni di pulizia: select del robot (chiave) con la loro etichetta. */
@@ -62,9 +61,10 @@ export class ElettroRobotDialog extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @property({ attribute: false }) info!: ElettroInfo;
   @property() openKey = "";
-  @state() private _tab: Tab = "controllo";
+  @state() private _tab: Tab = "pulisci";
   @state() private _rooms: number[] = [];
   @state() private _repeats = 1;
+  @state() private _how = false;
   @state() private _confirm = "";
   @state() private _error = "";
   private _onKey = (e: KeyboardEvent) => {
@@ -146,13 +146,7 @@ export class ElettroRobotDialog extends LitElement {
           : nothing}
       </div></div>
       ${m.error ? html`<div class="err"><ha-icon icon="mdi:alert-circle-outline"></ha-icon> ${m.error}${this._has("button", "press") && robotEnt(r, "button.clear_warning") ? html` <button class="btn s" @click=${() => this._press(robotEnt(r, "button.clear_warning"))}>Cancella</button>` : nothing}</div>` : nothing}
-      <div class="cmds">
-        ${m.canStart ? html`<button class="cmd go" @click=${() => this._vacuum("start")}><ha-icon icon="mdi:play"></ha-icon>${m.activity === "paused" ? "Riprendi" : "Avvia"}</button>` : nothing}
-        ${m.canPause ? html`<button class="cmd" @click=${() => this._vacuum("pause")}><ha-icon icon="mdi:pause"></ha-icon>Pausa</button>` : nothing}
-        ${m.canStop ? html`<button class="cmd" @click=${() => this._vacuum("stop")}><ha-icon icon="mdi:stop"></ha-icon>Stop</button>` : nothing}
-        ${m.canHome ? html`<button class="cmd" @click=${() => this._vacuum("return_to_base")}><ha-icon icon="mdi:home-import-outline"></ha-icon>Alla base</button>` : nothing}
-        <button class="cmd" @click=${() => this._vacuum("locate")}><ha-icon icon="mdi:map-marker-radius-outline"></ha-icon>Trovalo</button>
-      </div>`;
+      `;
   }
 
   private _map(r: RobotInfo) {
@@ -170,32 +164,65 @@ export class ElettroRobotDialog extends LitElement {
     return html`<div class="sec">Scorciatoie</div><div class="chips">${list.map((s) => html`<button class=${s.running ? "chip on" : "chip"} @click=${() => void this._call("dreame_vacuum", "vacuum_start_shortcut", { entity_id: r.entity, shortcut_id: s.id })}><ha-icon icon="mdi:lightning-bolt-outline"></ha-icon>${s.name}</button>`)}</div>`;
   }
 
-  private _tabControl(r: RobotInfo) {
-    return html`${this._hero(r)}${this._shortcuts(r)}
-      ${(() => {
-        const sel = this._selects(r, CLEAN_SELECTS);
-        return sel === nothing ? nothing : html`<div class="sec">Come pulisce</div>${sel}`;
-      })()}
-      ${this._map(r)}`;
+  /** Comandi del robot mentre lavora: pausa/riprendi, stop, torna alla base. */
+  private _live(r: RobotInfo) {
+    const m = robotModel(r, this.hass);
+    if (!m.canPause && !(m.canStart && m.activity === "paused") && !m.canStop) return nothing;
+    return html`<div class="cmds live">
+      ${m.canPause ? html`<button class="cmd" @click=${() => this._vacuum("pause")}><ha-icon icon="mdi:pause"></ha-icon>Pausa</button>` : nothing}
+      ${m.activity === "paused" ? html`<button class="cmd go" @click=${() => this._vacuum("start")}><ha-icon icon="mdi:play"></ha-icon>Riprendi</button>` : nothing}
+      ${m.canStop ? html`<button class="cmd" @click=${() => this._vacuum("stop")}><ha-icon icon="mdi:stop"></ha-icon>Stop</button>` : nothing}
+      ${m.canHome ? html`<button class="cmd" @click=${() => this._vacuum("return_to_base")}><ha-icon icon="mdi:home-import-outline"></ha-icon>Alla base</button>` : nothing}
+    </div>`;
   }
 
-  private _tabRooms(r: RobotInfo) {
+  private _start(r: RobotInfo, plan: ReturnType<typeof robotPlan>): void {
+    if (plan.segments) void this._call("dreame_vacuum", "vacuum_clean_segment", { entity_id: r.entity, segments: plan.segments, repeats: plan.repeats });
+    else this._vacuum("start");
+  }
+
+  /** Riassunto delle impostazioni di pulizia attive, es. "Turbo · Panno medio". */
+  private _howSummary(r: RobotInfo): string {
+    return CLEAN_SELECTS.slice(0, 3)
+      .map(([key]) => robotText(this.hass, robotEnt(r, `select.${key}`)))
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  private _tabClean(r: RobotInfo) {
+    const m = robotModel(r, this.hass);
     const mapSel = this._st(robotEnt(r, "select.selected_map"))?.state ?? "";
     const rooms = robotRooms(this._st(r.entity), mapSel);
-    const canRooms = this._has("dreame_vacuum", "vacuum_clean_segment");
-    if (!rooms.length || !canRooms) {
-      return html`<div class="empty">${canRooms ? "Il robot non ha ancora stanze: creale dall'app del costruttore." : "Questo robot non permette di scegliere le stanze da qui."}</div>`;
-    }
+    const canRooms = this._has("dreame_vacuum", "vacuum_clean_segment") && rooms.length > 0;
     const picked = this._rooms.filter((id) => rooms.some((x) => x.id === id));
-    return html`<div class="sec">Scegli le stanze da pulire</div>
-      <div class="chips">${rooms.map((x) => html`<button class=${picked.includes(x.id) ? "chip on" : "chip"} aria-pressed=${picked.includes(x.id) ? "true" : "false"} @click=${() => (this._rooms = picked.includes(x.id) ? picked.filter((i) => i !== x.id) : [...picked, x.id])}><ha-icon icon=${x.icon}></ha-icon>${x.name}</button>`)}</div>
-      <div class="group"><div class="glab">Quante passate</div>
-        <div class="chips">${[1, 2, 3].map((n) => html`<button class=${this._repeats === n ? "chip on" : "chip"} @click=${() => (this._repeats = n)}>${n}</button>`)}</div></div>
-      <div class="cmds"><button class="cmd go" ?disabled=${picked.length === 0} @click=${() => void this._call("dreame_vacuum", "vacuum_clean_segment", { entity_id: r.entity, segments: picked, repeats: this._repeats })}><ha-icon icon="mdi:play"></ha-icon>${picked.length === 0 ? "Scegli almeno una stanza" : picked.length === 1 ? "Pulisci la stanza" : `Pulisci ${picked.length} stanze`}</button></div>
-      ${(() => {
-        const sel = this._selects(r, CLEAN_SELECTS.slice(0, 3));
-        return sel === nothing ? nothing : html`<div class="sec">Impostazioni valide per questa pulizia</div>${sel}`;
-      })()}`;
+    const plan = robotPlan(rooms, picked, this._repeats, canRooms);
+    const busy = m.activity === "cleaning" || m.activity === "returning";
+    const unavailable = m.activity === "unavailable";
+    const how = this._selects(r, CLEAN_SELECTS.slice(0, 3));
+    const summary = this._howSummary(r);
+    return html`${this._hero(r)}${this._live(r)}
+      <div class="sec">Cosa vuoi pulire</div>
+      <div class="chips">
+        <button class=${picked.length === 0 ? "chip on" : "chip"} aria-pressed=${picked.length === 0 ? "true" : "false"} @click=${() => (this._rooms = [])}><ha-icon icon="mdi:home-outline"></ha-icon>Tutta la casa</button>
+        ${rooms.map((x) => html`<button class=${picked.includes(x.id) ? "chip on" : "chip"} aria-pressed=${picked.includes(x.id) ? "true" : "false"} @click=${() => (this._rooms = picked.includes(x.id) ? picked.filter((i) => i !== x.id) : [...picked, x.id])}><ha-icon icon=${x.icon}></ha-icon>${x.name}</button>`)}
+      </div>
+      ${rooms.length && !this._has("dreame_vacuum", "vacuum_clean_segment") ? html`<div class="hint">Questo robot non permette di scegliere le stanze da qui.</div>` : nothing}
+      ${rooms.length === 0 && this._has("dreame_vacuum", "vacuum_clean_segment") ? html`<div class="hint">Nessuna stanza trovata: creale dall'app del costruttore per pulirle una alla volta.</div>` : nothing}
+      ${canRooms ? html`<div class="inline"><span class="glab">Passate</span><div class="chips">${[1, 2, 3].map((n) => html`<button class=${this._repeats === n ? "chip on sq" : "chip sq"} aria-pressed=${this._repeats === n ? "true" : "false"} @click=${() => (this._repeats = n)}>${n}</button>`)}</div></div>` : nothing}
+      ${how !== nothing ? html`<button class="how" aria-expanded=${this._how ? "true" : "false"} @click=${() => (this._how = !this._how)}>
+          <ha-icon icon="mdi:tune-variant"></ha-icon><span class="hl">Come pulisce</span><span class="hs">${summary}</span><ha-icon icon=${this._how ? "mdi:chevron-up" : "mdi:chevron-down"}></ha-icon></button>
+        ${this._how ? html`<div class="howbox">${how}</div>` : nothing}` : nothing}
+      <div class="cmds"><button class="cmd go big" ?disabled=${busy || unavailable} @click=${() => this._start(r, plan)}><ha-icon icon="mdi:play"></ha-icon>${busy ? "Pulizia in corso" : plan.label}</button></div>
+      <div class="cmds">
+        <button class="cmd" ?disabled=${unavailable} @click=${() => this._vacuum("locate")}><ha-icon icon="mdi:map-marker-radius-outline"></ha-icon>Trovalo</button>
+        ${m.canHome && !m.canStop ? html`<button class="cmd" @click=${() => this._vacuum("return_to_base")}><ha-icon icon="mdi:home-import-outline"></ha-icon>Alla base</button>` : nothing}
+      </div>
+      ${this._shortcuts(r)}${this._map(r)}`;
+  }
+
+  private _tabSettings(r: RobotInfo) {
+    const clean = this._selects(r, CLEAN_SELECTS);
+    return html`${clean === nothing ? nothing : html`<div class="sec">Come pulisce</div>${clean}`}${this._tabOther(r)}`;
   }
 
   private _tabBase(r: RobotInfo) {
@@ -214,9 +241,29 @@ export class ElettroRobotDialog extends LitElement {
       ${sel === nothing ? nothing : html`<div class="sec">Impostazioni della base</div>${sel}`}`;
   }
 
+  private _stats(r: RobotInfo) {
+    const s = (key: string) => robotNumber(this.hass.states, robotEnt(r, `sensor.${key}`));
+    const count = s("cleaning_count");
+    const area = s("total_cleaned_area");
+    const time = s("total_cleaning_time");
+    const lastId = robotEnt(r, "sensor.cleaning_history");
+    const lastSt = this._st(lastId);
+    const last = lastSt && lastSt.state && !["unknown", "unavailable"].includes(lastSt.state) ? Date.parse(lastSt.state) : NaN;
+    const first = Date.parse(this._st(robotEnt(r, "sensor.first_cleaning_date"))?.state ?? "");
+    const dt = (t: number) => new Date(t).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" });
+    if (count === null && area === null && time === null) return nothing;
+    return html`<div class="sec">Statistiche</div>
+      ${count !== null ? html`<div class="kv"><span>Pulizie fatte</span><b>${fmt(count, 0)}</b></div>` : nothing}
+      ${area !== null ? html`<div class="kv"><span>Superficie pulita</span><b>${fmt(area, 0)} m²</b></div>` : nothing}
+      ${time !== null ? html`<div class="kv"><span>Tempo di pulizia</span><b>${fmt(time / 60, 1)} h</b></div>` : nothing}
+      ${!Number.isNaN(last) ? html`<div class="kv"><span>Ultima pulizia</span><b>${dt(last)}</b></div>` : nothing}
+      ${!Number.isNaN(first) ? html`<div class="kv"><span>Prima pulizia</span><b>${dt(first)}</b></div>` : nothing}`;
+  }
+
   private _tabMaint(r: RobotInfo) {
     const rows = consumables(r, this.hass.states);
-    if (!rows.length) return html`<div class="empty">Questo robot non comunica lo stato dei consumabili.</div>`;
+    const stats = this._stats(r);
+    if (!rows.length) return stats === nothing ? html`<div class="empty">Questo robot non comunica lo stato dei consumabili.</div>` : stats;
     return html`<div class="sec">Consumabili</div>
       ${rows.map((c) => html`<div class="cons">
         <div class="ctop"><span>${c.label}</span><b class=${c.low ? "bad" : ""}>${c.pct === null ? "–" : `${fmt(c.pct, 0)} %`}${c.hoursLeft !== null ? html` <span class="mut">· ${fmt(c.hoursLeft, c.hoursLeft < 10 ? 1 : 0)} h</span>` : nothing}</b></div>
@@ -228,7 +275,8 @@ export class ElettroRobotDialog extends LitElement {
           } else this._confirm = c.key;
         }}>${this._confirm === c.key ? "Tocca ancora per confermare" : "Segna come sostituito"}</button>` : nothing}
       </div>`)}
-      <div class="hint">Segna come sostituito solo dopo aver cambiato o pulito il pezzo: il contatore riparte da 100 %.</div>`;
+      <div class="hint">Segna come sostituito solo dopo aver cambiato o pulito il pezzo: il contatore riparte da 100 %.</div>
+      ${stats}`;
   }
 
   private _tabOther(r: RobotInfo) {
@@ -243,38 +291,21 @@ export class ElettroRobotDialog extends LitElement {
     const volId = robotEnt(r, "number.volume");
     const vol = robotNumber(this.hass.states, volId);
     const dnd = [robotText(this.hass, robotEnt(r, "time.dnd_start")), robotText(this.hass, robotEnt(r, "time.dnd_end"))].filter(Boolean);
-    const s = (key: string) => robotNumber(this.hass.states, robotEnt(r, `sensor.${key}`));
-    const count = s("cleaning_count");
-    const area = s("total_cleaned_area");
-    const time = s("total_cleaning_time");
-    const lastId = robotEnt(r, "sensor.cleaning_history");
-    const lastSt = this._st(lastId);
-    const last = lastSt && lastSt.state && !["unknown", "unavailable"].includes(lastSt.state) ? Date.parse(lastSt.state) : NaN;
-    const first = Date.parse(this._st(robotEnt(r, "sensor.first_cleaning_date"))?.state ?? "");
-    const dt = (t: number) => new Date(t).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" });
     return html`${sw.length ? html`<div class="sec">Opzioni</div>${sw}` : nothing}
       ${dnd.length === 2 ? html`<div class="hint">Non disturbare: dalle ${dnd[0]?.slice(0, 5)} alle ${dnd[1]?.slice(0, 5)}.</div>` : nothing}
       ${vol !== null && volId ? html`<div class="sec">Volume della voce</div>
         <div class="vol"><ha-icon icon="mdi:volume-low"></ha-icon><input type="range" min="0" max="100" step="5" .value=${String(vol)} aria-label="Volume" @change=${(e: Event) => void this._call("number", "set_value", { entity_id: volId, value: Number((e.target as HTMLInputElement).value) })} /><ha-icon icon="mdi:volume-high"></ha-icon><b>${fmt(vol, 0)}</b></div>` : nothing}
-      ${count !== null || area !== null || time !== null
-        ? html`<div class="sec">Statistiche</div>
-          ${count !== null ? html`<div class="kv"><span>Pulizie fatte</span><b>${fmt(count, 0)}</b></div>` : nothing}
-          ${area !== null ? html`<div class="kv"><span>Superficie pulita</span><b>${fmt(area, 0)} m²</b></div>` : nothing}
-          ${time !== null ? html`<div class="kv"><span>Tempo di pulizia</span><b>${fmt(time / 60, 1)} h</b></div>` : nothing}
-          ${!Number.isNaN(last) ? html`<div class="kv"><span>Ultima pulizia</span><b>${dt(last)}</b></div>` : nothing}
-          ${!Number.isNaN(first) ? html`<div class="kv"><span>Prima pulizia</span><b>${dt(first)}</b></div>` : nothing}` : nothing}
-      ${sw.length === 0 && count === null && vol === null ? html`<div class="empty">Nessuna opzione disponibile per questo robot.</div>` : nothing}`;
+      ${sw.length === 0 && vol === null ? html`<div class="empty">Nessuna opzione disponibile per questo robot.</div>` : nothing}`;
   }
 
   render() {
     const r = this._robot;
     if (!r) return nothing;
     const body =
-      this._tab === "stanze" ? this._tabRooms(r)
+      this._tab === "impostazioni" ? this._tabSettings(r)
       : this._tab === "base" ? this._tabBase(r)
       : this._tab === "manutenzione" ? this._tabMaint(r)
-      : this._tab === "altro" ? this._tabOther(r)
-      : this._tabControl(r);
+      : this._tabClean(r);
     return html`
       <div class="backdrop" @click=${(e: Event) => e.target === e.currentTarget && this._close()}>
         <div class="panel wide" role="dialog" aria-modal="true" aria-label=${`Gestisci ${r.name}`}>
@@ -309,7 +340,16 @@ export class ElettroRobotDialog extends LitElement {
       .cmds { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
       .cmd { flex: 1; min-width: 110px; min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; border: 1px solid var(--divider-color, #ccc); background: var(--secondary-background-color, #f4f4f4); color: inherit; font-size: 0.95rem; cursor: pointer; }
       .cmd.go { background: #16a34a; border-color: transparent; color: #fff; font-weight: 600; }
+      .cmd.big { min-height: 60px; font-size: 1.05rem; }
       .cmd:disabled { opacity: 0.5; cursor: default; }
+      .cmds.live { margin-top: 10px; }
+      .inline { display: flex; align-items: center; gap: 12px; margin: 12px 0 4px; }
+      .inline .glab { margin: 0; }
+      .chip.sq { min-width: 44px; justify-content: center; padding: 0; }
+      .how { width: 100%; min-height: 48px; margin-top: 8px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 14px; border: 1px solid var(--divider-color, #ccc); background: transparent; color: inherit; font-size: 0.92rem; cursor: pointer; text-align: left; }
+      .how .hl { font-weight: 600; }
+      .how .hs { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--secondary-text-color, #727272); }
+      .howbox { padding: 6px 12px 2px; border: 1px solid var(--divider-color, #ccc); border-top: 0; border-radius: 0 0 14px 14px; margin-top: -6px; padding-top: 12px; }
       .group { margin: 8px 0 12px; }
       .glab { font-size: 0.85rem; margin-bottom: 4px; color: var(--secondary-text-color, #727272); }
       .chips { display: flex; flex-wrap: wrap; gap: 8px; }

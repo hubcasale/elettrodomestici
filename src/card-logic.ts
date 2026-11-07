@@ -697,6 +697,26 @@ export function robotRooms(vacuum: HassState | undefined, selectedMap: string): 
     .filter((r): r is { id: number; name?: string; icon?: string } => !!r && typeof r === "object" && typeof (r as { id?: unknown }).id === "number")
     .map((r) => ({ id: r.id, name: String(r.name ?? `Stanza ${r.id}`), icon: typeof r.icon === "string" ? r.icon : "mdi:floor-plan" }));
 }
+export interface RobotPlan {
+  /** Testo del pulsante di avvio. */
+  label: string;
+  /** Stanze da pulire; null = tutta la casa con un semplice "avvia". */
+  segments: number[] | null;
+  repeats: number;
+}
+/** Cosa fa il pulsante di avvio: tutta la casa, una stanza o più stanze (ordine di selezione), con le passate scelte. */
+export function robotPlan(rooms: RobotRoom[], picked: number[], repeats: number, canRooms: boolean): RobotPlan {
+  const n = Math.min(3, Math.max(1, Math.round(repeats) || 1));
+  if (!canRooms || rooms.length === 0) return { label: "Pulisci tutta la casa", segments: null, repeats: 1 };
+  const chosen = picked.filter((id, i) => rooms.some((r) => r.id === id) && picked.indexOf(id) === i);
+  const suffix = n > 1 ? ` · ${n} passate` : "";
+  if (chosen.length === 0) {
+    return { label: `Pulisci tutta la casa${suffix}`, segments: n > 1 ? rooms.map((r) => r.id) : null, repeats: n };
+  }
+  const names = chosen.map((id) => rooms.find((r) => r.id === id)?.name ?? "");
+  const what = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} e ${names[1]}` : `${names.length} stanze`;
+  return { label: `Pulisci ${what}${suffix}`, segments: chosen, repeats: n };
+}
 export function robotShortcuts(vacuum: HassState | undefined): RobotShortcut[] {
   const all = vacuum?.attributes.shortcuts;
   if (!all || typeof all !== "object") return [];

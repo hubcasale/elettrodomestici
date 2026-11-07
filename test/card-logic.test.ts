@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   appliancesError, energySensors, extraValue, fmt, fmtEur, fmtKwh, formatDuration, formatHours, liveSnapshot, metricText, newAppliance,
-  counters, consumables, gridColumns, gridTemplate, guessOldPackage, makerView, robotModel, robotRooms, robotShortcuts, robotText, appliancesError, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
+  counters, consumables, gridColumns, gridTemplate, guessOldPackage, makerView, robotModel, robotPlan, robotRooms, robotShortcuts, robotText, appliancesError, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
 } from "../src/card-logic";
 import { applianceSvg } from "../src/appliance-svg";
 import type { ApplianceInfo, HassState, RobotInfo, TypeDefaults } from "../src/types";
@@ -288,4 +288,17 @@ test("robot: stanze, scorciatoie, testo tradotto e validazione", () => {
   const base = { type: "aspirapolvere", name: "R", stop_w: 0, start_w: 0 };
   assert.match(appliancesError([{ ...base, entity: "sensor.x" } as never]) ?? "", /vacuum/);
   assert.equal(appliancesError([{ ...base, entity: "vacuum.x" } as never]), null);
+});
+
+test("robot: piano di avvio (tutto, una stanza, più stanze, passate)", () => {
+  const rooms = [{ id: 1, name: "Soggiorno", icon: "x" }, { id: 2, name: "Cucina", icon: "x" }, { id: 3, name: "Camera", icon: "x" }];
+  assert.deepEqual(robotPlan(rooms, [], 1, true), { label: "Pulisci tutta la casa", segments: null, repeats: 1 });
+  assert.deepEqual(robotPlan(rooms, [], 2, true), { label: "Pulisci tutta la casa · 2 passate", segments: [1, 2, 3], repeats: 2 });
+  assert.deepEqual(robotPlan(rooms, [2], 1, true), { label: "Pulisci Cucina", segments: [2], repeats: 1 });
+  assert.deepEqual(robotPlan(rooms, [3, 1], 1, true), { label: "Pulisci Camera e Soggiorno", segments: [3, 1], repeats: 1 });
+  assert.equal(robotPlan(rooms, [1, 2, 3], 3, true).label, "Pulisci 3 stanze · 3 passate");
+  assert.deepEqual(robotPlan(rooms, [9, 2, 2], 1, true).segments, [2]);
+  assert.deepEqual(robotPlan(rooms, [9], 1, true).segments, null);
+  assert.deepEqual(robotPlan(rooms, [2], 2, false), { label: "Pulisci tutta la casa", segments: null, repeats: 1 });
+  assert.deepEqual(robotPlan([], [], 2, true).segments, null);
 });
