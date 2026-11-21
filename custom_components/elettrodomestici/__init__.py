@@ -184,7 +184,7 @@ def ws_update(hass: HomeAssistant, connection: websocket_api.ActiveConnection, m
         vol.Required("type"): "elettrodomestici/action",
         vol.Optional("entry_id"): str,
         vol.Required("key"): str,
-        vol.Required("action"): vol.In(["acknowledge", "reset_maintenance"]),
+        vol.Required("action"): vol.In(["acknowledge", "reset_maintenance", "auto_on", "auto_off"]),
     }
 )
 @callback

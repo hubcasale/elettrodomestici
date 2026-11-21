@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed, async_mock_service
 
 from custom_components.elettrodomestici.const import DOMAIN, EVENT_FINISHED
 
@@ -155,7 +155,7 @@ async def test_websocket_info_update_action_stats(hass: HomeAssistant, hass_ws_c
     assert [a["key"] for a in r["appliances"]] == ["lavatrice", "frigorifero"]
     assert r["appliances"][0]["entities"]["stato"].startswith("sensor.")
     assert r["appliances"][0]["entities"]["svuotata"].startswith("button.")
-    assert set(r["types"]) == {"lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde", "aspirapolvere"}
+    assert set(r["types"]) == {"lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde", "aspirapolvere", "umidostato"}
 
     new = APPLIANCES[:1] + [
         {"type": "forno", "name": "Forno", "entity": "sensor.presa_forno_potenza"},
@@ -336,3 +336,42 @@ async def test_robot_vacuum_is_listed_with_its_entities_and_has_no_machine(hass:
     assert ents["sensor.battery_level"].startswith("sensor.d20_") and ents["button.self_clean"].startswith("button.") and ents["switch.self_clean"].startswith("switch.")
     assert ents["select.suction_level"].endswith("r1_suction_level") and ents["camera.map"].endswith("r1_map_map")
     assert not any("saved_map" in v or "room_1" in v for v in ents.values())
+
+
+async def test_humidistat_turns_the_fan_on_and_off_and_appears_in_info(hass: HomeAssistant, hass_ws_client) -> None:
+    """L'umidostato non ha presa né cicli: legge il sensore di umidità e comanda il ventilatore; compare in info() a parte."""
+    on_calls = async_mock_service(hass, "homeassistant", "turn_on")
+    off_calls = async_mock_service(hass, "homeassistant", "turn_off")
+    hass.states.async_set("sensor.bagno_umidita", "50", {"unit_of_measurement": "%", "device_class": "humidity"})
+    hass.states.async_set("switch.bagno_ventilatore", "off")
+    hass.states.async_set("light.bagno", "off")
+    hum = {"on_above": 70, "on_delay": 0, "off_below": 60, "off_delay": 0, "min_on": 0, "max_on": 60, "light_max": 10}
+    entry = await _setup(hass, APPLIANCES + [{"type": "umidostato", "name": "Bagno verde", "entity": "sensor.bagno_umidita",
+                                              "fan_entity": "switch.bagno_ventilatore", "light_entity": "light.bagno", "hum": hum},
+                                             {"type": "umidostato", "name": "Senza ventilatore", "entity": "sensor.x"}])
+    ctl = hass.data[DOMAIN][entry.entry_id]
+    assert set(ctl.machines) == {"lavatrice", "frigorifero"} and set(ctl.hums) == {"bagno_verde"}
+
+    hass.states.async_set("sensor.bagno_umidita", "80", {"unit_of_measurement": "%", "device_class": "humidity"})
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in on_calls] == ["switch.bagno_ventilatore"]
+
+    hass.states.async_set("switch.bagno_ventilatore", "on")
+    hass.states.async_set("sensor.bagno_umidita", "50", {"unit_of_measurement": "%", "device_class": "humidity"})
+    await hass.async_block_till_done()
+    assert [c.data["entity_id"] for c in off_calls] == ["switch.bagno_ventilatore"]
+
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "elettrodomestici/info"})
+    r = (await client.receive_json())["result"]
+    assert [a["key"] for a in r["appliances"]] == ["lavatrice", "frigorifero"]
+    assert [a["key"] for a in r["humidistats"]] == ["bagno_verde"]
+    item = r["humidistats"][0]
+    assert item["kind"] == "humidistat" and item["fan_entity"] == "switch.bagno_ventilatore" and item["light_entity"] == "light.bagno"
+    assert item["hum"]["on_above"] == 70 and item["status"]["phase"] in ("on", "off", "closing", "unavailable")
+    assert r["types"]["umidostato"]["humidistat"] is True and r["types"]["umidostato"]["hum"]["light_max"] == 10
+
+    await client.send_json({"id": 2, "type": "elettrodomestici/action", "key": "bagno_verde", "action": "auto_off"})
+    assert (await client.receive_json())["result"]["ok"] is True
+    await hass.async_block_till_done()
+    assert hass.data[DOMAIN][entry.entry_id].hum_cfg["bagno_verde"].hum["enabled"] is False
