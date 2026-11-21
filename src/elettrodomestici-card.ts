@@ -7,6 +7,7 @@ import "./settings-dialog";
 import "./stats-dialog";
 import "./charts-dialog";
 import "./robot-dialog";
+import "./hum-charts-dialog";
 import type { ElettroInfo, HomeAssistant, HumInfo, RobotInfo } from "./types";
 
 interface CardConfig {
@@ -21,7 +22,7 @@ interface CardConfig {
   header?: boolean;
 }
 
-type DialogTag = "elettro-settings-dialog" | "elettro-stats-dialog" | "elettro-charts-dialog" | "elettro-robot-dialog";
+type DialogTag = "elettro-settings-dialog" | "elettro-stats-dialog" | "elettro-charts-dialog" | "elettro-robot-dialog" | "elettro-hum-charts-dialog";
 
 /** Scheda degli elettrodomestici: una tessera per ognuno con immagine, stato, potenza e consumi; tocco = statistiche, pulsante = grafici. */
 export class ElettrodomesticiCard extends LitElement {
@@ -148,14 +149,15 @@ export class ElettrodomesticiCard extends LitElement {
           <span class="info">
             <span class="n">${m.name}</span>
             <span class="badge ${m.tone}">${m.statusLine}</span>
-            <span class="pw ${m.fanOn ? "on" : ""}">${m.humidity === null ? "–" : `${fmt(m.humidity, 0)} %`}</span>
+            <span class="pw ${m.fanOn ? "on" : ""}">${m.humidity === null ? "–" : `${fmt(m.humidity, 0)} %`}${m.temperature === null ? nothing : html`<span class="tmp">${fmt(m.temperature, 1)} ${m.tempUnit}</span>`}</span>
             <span class="row">${m.rule}</span>
             ${m.waitText ? html`<span class="row"><b>${m.waitText}</b></span>` : nothing}
           </span>
         </button>
-        <div class="acts">
+        <div class="acts hum">
           ${m.fanOn === null ? nothing : html`<button class=${m.fanOn ? "a" : "a ok"} @click=${() => this._humCall(h, !m.fanOn)}><ha-icon icon=${m.fanOn ? "mdi:fan-off" : "mdi:fan"}></ha-icon>${m.fanOn ? "Spegni" : "Accendi"}</button>`}
-          <button class=${m.auto ? "a ok" : "a"} role="switch" aria-checked=${m.auto ? "true" : "false"} @click=${() => this._humAuto(h, !m.auto)}><ha-icon icon="mdi:auto-fix"></ha-icon>Automatico ${m.auto ? "sì" : "no"}</button>
+          <button class=${m.auto ? "a ok" : "a"} role="switch" aria-checked=${m.auto ? "true" : "false"} @click=${() => this._humAuto(h, !m.auto)}><ha-icon icon="mdi:auto-fix"></ha-icon>Auto ${m.auto ? "sì" : "no"}</button>
+          <button class="a" aria-label=${`Grafici di ${m.name}`} @click=${() => void this._open("elettro-hum-charts-dialog", h.key)}><ha-icon icon="mdi:chart-line"></ha-icon>Grafici</button>
           <button class="a" aria-label=${`Soglie di ${m.name}`} @click=${() => void this._open("elettro-settings-dialog", h.key)}><ha-icon icon="mdi:tune-variant"></ha-icon>Soglie</button>
         </div>
       </div>`;
@@ -270,6 +272,7 @@ export class ElettrodomesticiCard extends LitElement {
     .badge.bad { background: #dc2626; color: #fff; }
     .pw { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--secondary-text-color, #727272); line-height: 1.15; }
     .pw.on { color: var(--primary-text-color, #212121); }
+    .tmp { margin-left: 10px; font-size: 1rem; font-weight: 500; color: var(--secondary-text-color, #727272); white-space: nowrap; }
     .row { font-size: 0.82rem; color: var(--secondary-text-color, #727272); }
     .row b { color: var(--primary-text-color, #212121); font-weight: 600; }
     .bar { height: 6px; border-radius: 3px; background: rgba(127, 127, 127, 0.25); margin: 8px 0 2px; overflow: hidden; }
@@ -280,6 +283,7 @@ export class ElettrodomesticiCard extends LitElement {
     .warn { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 10px; border-radius: 10px; background: rgba(245, 158, 11, 0.18); font-size: 0.82rem; }
     .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
     .a { flex: 1; min-width: 96px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 12px; border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: inherit; font-size: 0.85rem; cursor: pointer; }
+    .acts.hum .a { min-width: 72px; padding: 0 6px; font-size: 0.8rem; }
     .a.ok { background: #16a34a; border-color: transparent; color: #fff; }
   `;
 }
@@ -299,4 +303,4 @@ window.customCards.push({
 });
 
 // eslint-disable-next-line no-console
-console.info("%c ELETTRODOMESTICI %c v0.5.0 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
+console.info("%c ELETTRODOMESTICI %c v0.5.1 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");

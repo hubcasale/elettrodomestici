@@ -437,6 +437,8 @@ export const humiditySensors = (states: Record<string, HassState>, exclude: stri
   candidates(states, (id, st) => id.startsWith("sensor.") && (st.attributes.device_class === "humidity" || /umid|humid/.test(id)), exclude);
 export const lightEntities = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] =>
   candidates(states, (id) => /^(light|switch|input_boolean|binary_sensor)\./.test(id), exclude);
+export const temperatureSensors = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] =>
+  candidates(states, (id, st) => id.startsWith("sensor.") && (st.attributes.device_class === "temperature" || ["°C", "°F"].includes(String(st.attributes.unit_of_measurement))), exclude);
 export const fanEntities = (states: Record<string, HassState>): Candidate[] =>
   candidates(states, (id) => /^(switch|fan|light|input_boolean)\./.test(id));
 export const counters = (states: Record<string, HassState>): Candidate[] => candidates(states, (id) => id.startsWith("counter."));
@@ -823,6 +825,8 @@ export interface HumModel {
   waitText: string;
   rule: string;
   state: MachineState;
+  temperature: number | null;
+  tempUnit: string;
 }
 
 const HUM_UNTIL: Record<string, string> = { tempo_massimo: "limite di tempo", umidita_bassa: "umidità scesa", timer_luce: "timer della luce" };
@@ -871,5 +875,7 @@ export function humModel(app: HumInfo, hass: Pick<HomeAssistant, "states">, elap
     waitText: wait,
     rule: `Accende sopra ${h.on_above} % · spegne sotto ${h.off_below} %`,
     state: unavailable ? "non_disponibile" : fanOn ? "in_funzione" : "spento",
+    temperature: app.temp_entity ? toNumber(hass.states[app.temp_entity]?.state) : null,
+    tempUnit: (app.temp_entity && String(hass.states[app.temp_entity]?.attributes?.unit_of_measurement)) || "°C",
   };
 }

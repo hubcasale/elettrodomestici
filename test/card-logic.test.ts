@@ -337,6 +337,15 @@ test("umidostato: acceso, in chiusura, limite di tempo, automatico spento", () =
   assert.equal(manual.waitText, "");
 });
 
+test("umidostato: temperatura dal sensore scelto", () => {
+  const st = { ...hs("55", "off").states, "sensor.temp": { state: "23.46", attributes: { unit_of_measurement: "°C" } } };
+  const m = humModel(humInfo({ temp_entity: "sensor.temp" }), { states: st });
+  assert.equal(m.temperature, 23.46);
+  assert.equal(m.tempUnit, "°C");
+  assert.equal(humModel(humInfo(), hs("55", "off")).temperature, null);                                         // nessun sensore scelto
+  assert.equal(humModel(humInfo({ temp_entity: "sensor.temp" }), { states: { ...st, "sensor.temp": { state: "unavailable", attributes: {} } } }).temperature, null);
+});
+
 test("umidostato: non disponibile e valori letti dal vivo", () => {
   assert.equal(humModel(humInfo(), hs("unavailable", "off")).state, "non_disponibile");
   assert.equal(humModel(humInfo(), hs("55", "unavailable")).tone, "bad");

@@ -3,7 +3,7 @@ import { property, state } from "lit/decorators.js";
 import { dialogStyles } from "./dialog-style";
 import {
   TYPES, TYPE_ICON, TYPE_LABEL, appliancesError, energySensors, extraSensors, vacuumEntities, fmt, formatDuration, friendlyName, newAppliance, notifyServices,
-  powerSensors, priceSensors, counters, statusSensors, guessOldPackage, humiditySensors, fanEntities, lightEntities,
+  powerSensors, priceSensors, counters, statusSensors, guessOldPackage, humiditySensors, fanEntities, lightEntities, temperatureSensors,
 } from "./card-logic";
 import type { ApplianceCfg, ApplianceType, ElettroInfo, HomeAssistant, HumCfg } from "./types";
 
@@ -60,7 +60,7 @@ export class ElettroSettingsDialog extends LitElement {
       id: a.id, type: a.type, name: a.name, entity: a.entity, energy_entity: a.energy_entity, start_w: a.start_w, stop_w: a.stop_w,
       start_delay: a.start_delay, end_delay: a.end_delay, min_cycle: a.min_cycle, heat_w: a.heat_w, maint_cycles: a.maint_cycles,
       alert_minutes: a.alert_minutes, notify: a.notify, extras: a.extras.map((x) => ({ ...x })), maker: a.maker ?? null, maker_device: a.maker_device ?? null,
-      ...(a.type === "umidostato" ? { fan_entity: a.fan_entity ?? null, light_entity: a.light_entity ?? null, hum: a.hum ? { ...a.hum } : undefined } : {}),
+      ...(a.type === "umidostato" ? { fan_entity: a.fan_entity ?? null, light_entity: a.light_entity ?? null, temp_entity: a.temp_entity ?? null, hum: a.hum ? { ...a.hum } : undefined } : {}),
     }));
     this._price = String(this.info.price_kwh);
     this._priceEntity = this.info.price_entity;
@@ -298,6 +298,10 @@ export class ElettroSettingsDialog extends LitElement {
         <label class="f">Sensore di umidità (%)
           <input class="txt" list=${`dl-hu-${a.id}`} .value=${a.entity} @change=${(e: Event) => this._patch(a.id, { entity: (e.target as HTMLInputElement).value.trim() })} />
           <datalist id=${`dl-hu-${a.id}`}>${humiditySensors(this.hass.states, exclude).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>
+        <label class="f">Sensore di temperatura (facoltativo)
+          <input class="txt" list=${`dl-tp-${a.id}`} placeholder="sensor.…_temperatura" .value=${a.temp_entity ?? ""} @change=${(e: Event) => this._patch(a.id, { temp_entity: (e.target as HTMLInputElement).value.trim() || null })} />
+          <datalist id=${`dl-tp-${a.id}`}>${temperatureSensors(this.hass.states, [a.entity]).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist>
+          <span class="hint">Si mostra sulla scheda e nei grafici; non influisce sulla regola dell'umidità.</span></label>
         <label class="f">Ventilatore da comandare
           <input class="txt" list=${`dl-fn-${a.id}`} .value=${a.fan_entity ?? ""} @change=${(e: Event) => this._patch(a.id, { fan_entity: (e.target as HTMLInputElement).value.trim() || null })} />
           <datalist id=${`dl-fn-${a.id}`}>${fanEntities(this.hass.states).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist>

@@ -106,10 +106,12 @@ const humidistats = [];
     const hv = { on:"78", opening:"74", closing:"52", off:"55", locked:"82", manual:"80", light:"52" }[mode] ?? "55";
     const fan = ["on","closing","manual","light"].includes(mode) ? "on" : "off";
     states["sensor.bagno_verde_umidita"] = { entity_id:"sensor.bagno_verde_umidita", state:hv, attributes:{ unit_of_measurement:"%", device_class:"humidity", friendly_name:"Bagno verde umidità" } };
+    states["sensor.bagno_verde_temperatura"] = { entity_id:"sensor.bagno_verde_temperatura", state:"23.4", attributes:{ unit_of_measurement:"°C", device_class:"temperature", friendly_name:"Bagno verde temperatura" } };
+    states["light.bagno_verde"] = { entity_id:"light.bagno_verde", state:"off", attributes:{ friendly_name:"Luce bagno verde" } };
     states["switch.bagno_verde_ventilatore"] = { entity_id:"switch.bagno_verde_ventilatore", state:fan, attributes:{ friendly_name:"Ventilatore bagno verde" } };
     const status = { on:{phase:"on",wait_s:2700,on_for_s:900,until:"tempo_massimo"}, opening:{phase:"opening",wait_s:75,on_for_s:null}, closing:{phase:"closing",wait_s:140,on_for_s:600,until:"umidita_bassa"}, off:{phase:"off",wait_s:null,on_for_s:null}, locked:{phase:"locked",wait_s:null,on_for_s:null}, manual:{phase:"on",wait_s:null,on_for_s:60}, light:{phase:"light",wait_s:420,on_for_s:180,until:"timer_luce"} }[mode] ?? {phase:"off",wait_s:null,on_for_s:null};
     const hum = { enabled: mode !== "manual", on_above:70, on_delay:2, off_below:60, off_delay:3, min_on:5, max_on:60, min_off:0, light_max:10 };
-    humidistats.push({ id:"bagno_verde", key:"bagno_verde", kind:"humidistat", type:"umidostato", name:"Umidostato bagno verde", entity:"sensor.bagno_verde_umidita", fan_entity:"switch.bagno_verde_ventilatore", light_entity: mode==="light"?"light.bagno_verde":null, energy_entity:null, start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, notify:false, extras:[], maker:null, maker_device:null, hum, status });
+    humidistats.push({ id:"bagno_verde", key:"bagno_verde", kind:"humidistat", type:"umidostato", name:"Umidostato bagno verde", entity:"sensor.bagno_verde_umidita", fan_entity:"switch.bagno_verde_ventilatore", light_entity:"light.bagno_verde", temp_entity:"sensor.bagno_verde_temperatura", energy_entity:null, start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, notify:false, extras:[], maker:null, maker_device:null, hum, status });
     types.umidostato = { label:"Umidostato", icon:"mdi:fan", off_label:"Ventilatore spento", done_label:"", has_finished:false, notify:false, maint_label:"", phases:["Ventilazione"], start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, robot:false, humidistat:true, hum:{ enabled:true, on_above:70, on_delay:2, off_below:60, off_delay:3, min_on:5, max_on:60, min_off:0, light_max:10 } };
   }
 }
@@ -118,7 +120,11 @@ function history(ids, start, end) {
   const out = {};
   ids.forEach((id) => {
     const rows = []; const n = 200;
-    if (id.endsWith("_stato")) { rows.push({s:"spento",lu:start/1000}); rows.push({s:"in_funzione",lu:(start+(end-start)*0.3)/1000}); rows.push({s:"terminato",lu:(start+(end-start)*0.62)/1000}); rows.push({s:"spento",lu:(start+(end-start)*0.8)/1000}); }
+    if (id === "sensor.bagno_verde_umidita") { for (let i=0;i<n;i++){ const f=i/n; const v = 52 + 30*Math.exp(-Math.pow((f-0.55)/0.07,2)) + 28*Math.exp(-Math.pow((f-0.2)/0.05,2)) + 2*Math.sin(i/3); rows.push({s:String(v.toFixed(1)),lu:(start+(end-start)*f)/1000}); } }
+    else if (id === "sensor.bagno_verde_temperatura") { for (let i=0;i<n;i++){ const f=i/n; rows.push({s:String((21 + 3*Math.exp(-Math.pow((f-0.57)/0.1,2)) + 2.5*Math.exp(-Math.pow((f-0.22)/0.07,2)) + Math.sin(i/9)*0.3).toFixed(1)),lu:(start+(end-start)*f)/1000}); } }
+    else if (id === "switch.bagno_verde_ventilatore") { const t=(f)=>(start+(end-start)*f)/1000; rows.push({s:"off",lu:t(0)},{s:"on",lu:t(0.16)},{s:"off",lu:t(0.32)},{s:"on",lu:t(0.5)},{s:"off",lu:t(0.7)}); }
+    else if (id === "light.bagno_verde") { const t=(f)=>(start+(end-start)*f)/1000; rows.push({s:"off",lu:t(0)},{s:"on",lu:t(0.15)},{s:"off",lu:t(0.2)},{s:"on",lu:t(0.5)},{s:"off",lu:t(0.54)}); }
+    else if (id.endsWith("_stato")) { rows.push({s:"spento",lu:start/1000}); rows.push({s:"in_funzione",lu:(start+(end-start)*0.3)/1000}); rows.push({s:"terminato",lu:(start+(end-start)*0.62)/1000}); rows.push({s:"spento",lu:(start+(end-start)*0.8)/1000}); }
     else for (let i=0;i<n;i++){ const f=i/n; let v=3; if (f>0.3&&f<0.62) v = f>0.36&&f<0.46 ? 2000 : f>0.55 ? 420 : 180+30*Math.sin(i); rows.push({s:String(v),lu:(start+(end-start)*f)/1000}); }
     out[id]=rows;
   });

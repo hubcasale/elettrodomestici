@@ -168,6 +168,7 @@ class ApplianceConfig:
     maker_device: str | None = None            # dispositivo di quell'integrazione (id del registro dispositivi)
     fan_entity: str | None = None              # umidostato: il ventilatore (switch, fan, light, input_boolean) che si accende e spegne
     light_entity: str | None = None            # umidostato: la luce del bagno (facoltativa): accendendola parte anche il ventilatore
+    temp_entity: str | None = None             # umidostato: sensore di temperatura (facoltativo): solo da mostrare, non influisce sulla regola
     hum: dict[str, Any] = field(default_factory=dict)   # umidostato: soglie e tempi (vedi humidistat.DEFAULTS)
 
     @property
@@ -195,7 +196,7 @@ class ApplianceConfig:
             "alert_minutes": self.alert_minutes, "notify": self.notify,
             "extras": [{"entity": e, "label": l} for e, l in self.extras],
             "maker": self.maker, "maker_device": self.maker_device,
-            "fan_entity": self.fan_entity, "light_entity": self.light_entity, "hum": dict(self.hum),
+            "fan_entity": self.fan_entity, "light_entity": self.light_entity, "temp_entity": self.temp_entity, "hum": dict(self.hum),
         }
 
     @staticmethod
@@ -211,6 +212,8 @@ class ApplianceConfig:
             return None
         fan = d.get("fan_entity")
         fan = fan.strip() if isinstance(fan, str) and FAN_RE.match(fan.strip()) else None
+        temp = d.get("temp_entity")
+        temp = temp.strip() if isinstance(temp, str) and re.match(r"^sensor\.[a-z0-9_]+$", temp.strip()) and temp.strip() != entity.strip() else None
         light = d.get("light_entity")
         light = light.strip() if isinstance(light, str) and LIGHT_RE.match(light.strip()) and light.strip() != fan else None
         if p.humidistat and (fan is None or not entity.strip().startswith("sensor.") or fan == entity.strip()):
@@ -252,6 +255,7 @@ class ApplianceConfig:
             maker_device=maker_device,
             fan_entity=fan if p.humidistat else None,
             light_entity=light if p.humidistat else None,
+            temp_entity=temp if p.humidistat else None,
             hum=hmd.normalize(d.get("hum")) if p.humidistat else {},
         )
 

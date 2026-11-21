@@ -81,8 +81,11 @@ Un umidostato comanda un ventilatore (un `switch`, un `fan`, una `light` o un `i
 | Acceso almeno | 5 min | Non si spegne prima, anche se l'umidità scende subito. |
 | Si spegne comunque dopo | 60 min | Limite di sicurezza (0 = nessuno). Dopo, riparte solo quando l'umidità scende sotto la soglia di accensione e risale. |
 | Resta spento almeno | 0 min | Attesa prima di una nuova accensione. |
+| Sensore di temperatura (facoltativo) | – | Si mostra sulla scheda e nei grafici; non influisce sulla regola. |
 | Luce del bagno (facoltativa) | – | Accendendola, il ventilatore parte anche se l'umidità è bassa. |
 | Con la luce, acceso al massimo | 10 min | Alla scadenza, se l'umidità è ancora sopra la soglia di spegnimento decide la regola dell'umidità; altrimenti si spegne. |
+
+Il pulsante **Grafici** della tessera mostra l'umidità con le soglie, la temperatura (se scelta) e le fasce in cui ventilatore e luce erano accesi (6 ore, 24 ore, 3 o 7 giorni).
 
 La regolazione automatica si attiva e disattiva dalla scheda (pulsante "Automatico") o dalle preferenze; il ventilatore si accende e spegne anche a mano dalla scheda. Se il ventilatore viene acceso a mano, si spegne con le stesse regole. Ogni comando genera l'evento `elettrodomestici_umidostato` (`id`, `name`, `action`, `reason`, `humidity`).
 

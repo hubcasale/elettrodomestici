@@ -193,6 +193,15 @@ def test_light_status_countdown_and_unavailable_light():
     assert hs2.step(at(0), 50, False, None) == (None, "") and hs2.step(at(1), 50, False, None) == (None, "")     # nessuna luce scelta: ignorata
 
 
+def test_config_parsing_temperature_entity():
+    base = {"type": "umidostato", "name": "B", "entity": "sensor.u", "fan_entity": "switch.v"}
+    assert e.ApplianceConfig.from_dict({**base, "temp_entity": "sensor.temp_bagno"}).temp_entity == "sensor.temp_bagno"
+    assert e.ApplianceConfig.from_dict({**base, "temp_entity": "switch.x"}).temp_entity is None              # deve essere un sensore
+    assert e.ApplianceConfig.from_dict({**base, "temp_entity": "sensor.u"}).temp_entity is None              # non è il sensore di umidità
+    assert e.ApplianceConfig.from_dict({**base}).temp_entity is None
+    assert e.ApplianceConfig.from_dict(e.ApplianceConfig.from_dict({**base, "temp_entity": "sensor.t"}).to_dict()).temp_entity == "sensor.t"
+
+
 def test_config_parsing_light_entity():
     c = e.ApplianceConfig.from_dict({"type": "umidostato", "name": "B", "entity": "sensor.u", "fan_entity": "switch.v", "light_entity": "light.bagno",
                                      "hum": {"light_max": 15}})

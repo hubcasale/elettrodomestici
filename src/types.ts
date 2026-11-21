@@ -46,6 +46,8 @@ export interface ApplianceCfg {
   fan_entity?: string | null;
   /** umidostato: la luce del bagno (facoltativa): accendendola parte anche il ventilatore */
   light_entity?: string | null;
+  /** umidostato: sensore di temperatura (facoltativo), solo da mostrare */
+  temp_entity?: string | null;
   /** umidostato: soglie e tempi */
   hum?: HumCfg;
 }
