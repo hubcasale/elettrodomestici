@@ -2,12 +2,12 @@ import { LitElement, html, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { applianceSvg } from "./appliance-svg";
-import { fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, robotModel, summaryText, tileModel, type RobotModel, type TileModel } from "./card-logic";
+import { fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, humModel, robotModel, summaryText, tileModel, type HumModel, type RobotModel, type TileModel } from "./card-logic";
 import "./settings-dialog";
 import "./stats-dialog";
 import "./charts-dialog";
 import "./robot-dialog";
-import type { ElettroInfo, HomeAssistant, RobotInfo } from "./types";
+import type { ElettroInfo, HomeAssistant, HumInfo, RobotInfo } from "./types";
 
 interface CardConfig {
   type: string;
@@ -74,7 +74,9 @@ export class ElettrodomesticiCard extends LitElement {
     for (const s of this._syncers) s();
   }
   protected updated(): void {
-    if (this.hass && !this._loading && (!this._info || Date.now() - this._loadedAt > 5 * 60000)) void this._loadInfo();
+    // con un umidostato le attese cambiano di continuo: si aggiornano più spesso (altrimenti ogni 5 minuti)
+    const every = (this._info?.humidistats?.length ?? 0) > 0 ? 15000 : 5 * 60000;
+    if (this.hass && !this._loading && (!this._info || Date.now() - this._loadedAt > every)) void this._loadInfo();
   }
 
   private async _loadInfo(): Promise<void> {
@@ -125,6 +127,38 @@ export class ElettrodomesticiCard extends LitElement {
 
   private _robotCall(domain: string, service: string, entity: string): void {
     void this.hass.callService(domain, service, { entity_id: entity });
+  }
+
+  private _humCall(h: HumInfo, on: boolean): void {
+    if (h.fan_entity) void this.hass.callService("homeassistant", on ? "turn_on" : "turn_off", { entity_id: h.fan_entity });
+  }
+
+  private _humAuto(h: HumInfo, on: boolean): void {
+    void this.hass.callWS({ type: "elettrodomestici/action", entry_id: this._info?.entry_id, key: h.key, action: on ? "auto_on" : "auto_off" }).then(() => {
+      this._loadedAt = 0;
+      void this._loadInfo();
+    });
+  }
+
+  private _humTile(h: HumInfo, m: HumModel) {
+    return html`
+      <div class="tile ${m.tone}">
+        <button class="main" aria-label=${`Preferenze di ${m.name}`} @click=${() => void this._open("elettro-settings-dialog", h.key)}>
+          <span class="img">${unsafeSVG(applianceSvg("umidostato", m.state))}</span>
+          <span class="info">
+            <span class="n">${m.name}</span>
+            <span class="badge ${m.tone}">${m.statusLine}</span>
+            <span class="pw ${m.fanOn ? "on" : ""}">${m.humidity === null ? "–" : `${fmt(m.humidity, 0)} %`}</span>
+            <span class="row">${m.rule}</span>
+            ${m.waitText ? html`<span class="row"><b>${m.waitText}</b></span>` : nothing}
+          </span>
+        </button>
+        <div class="acts">
+          ${m.fanOn === null ? nothing : html`<button class=${m.fanOn ? "a" : "a ok"} @click=${() => this._humCall(h, !m.fanOn)}><ha-icon icon=${m.fanOn ? "mdi:fan-off" : "mdi:fan"}></ha-icon>${m.fanOn ? "Spegni" : "Accendi"}</button>`}
+          <button class=${m.auto ? "a ok" : "a"} role="switch" aria-checked=${m.auto ? "true" : "false"} @click=${() => this._humAuto(h, !m.auto)}><ha-icon icon="mdi:auto-fix"></ha-icon>Automatico ${m.auto ? "sì" : "no"}</button>
+          <button class="a" aria-label=${`Soglie di ${m.name}`} @click=${() => void this._open("elettro-settings-dialog", h.key)}><ha-icon icon="mdi:tune-variant"></ha-icon>Soglie</button>
+        </div>
+      </div>`;
   }
 
   private _robotTile(r: RobotInfo, m: RobotModel) {
@@ -186,7 +220,9 @@ export class ElettrodomesticiCard extends LitElement {
     const shown = wanted ? this._info.appliances.filter((a) => wanted.includes(a.key)) : this._info.appliances;
     const tiles = shown.map((a) => tileModel(a, this.hass.states, this._info?.types, this._now));
     const robots = (this._info.robots ?? []).filter((r) => !wanted || wanted.includes(r.key));
-    const grid = html`<div class="grid" style=${`grid-template-columns:${gridTemplate(this._config.columns)}`}>${tiles.map((t) => this._tile(t))}${robots.map((r) => this._robotTile(r, robotModel(r, this.hass)))}</div>`;
+    const hums = (this._info.humidistats ?? []).filter((r) => !wanted || wanted.includes(r.key));
+    const elapsed = (this._now - this._loadedAt) / 1000;
+    const grid = html`<div class="grid" style=${`grid-template-columns:${gridTemplate(this._config.columns)}`}>${tiles.map((t) => this._tile(t))}${robots.map((r) => this._robotTile(r, robotModel(r, this.hass)))}${hums.map((h) => this._humTile(h, humModel(h, this.hass, elapsed)))}</div>`;
     if (this._config.header === false) return html`<ha-card><div class="pad compact">${grid}</div></ha-card>`;
     return html`
       <ha-card>
@@ -198,7 +234,7 @@ export class ElettrodomesticiCard extends LitElement {
             </div>
             <button class="ib" aria-label="Preferenze" @click=${() => void this._open("elettro-settings-dialog")}><ha-icon icon="mdi:cog"></ha-icon></button>
           </div>
-          ${tiles.length + robots.length === 0
+          ${tiles.length + robots.length + hums.length === 0
             ? html`<button class="empty" @click=${() => void this._open("elettro-settings-dialog")}><ha-icon icon="mdi:plus-circle-outline"></ha-icon>Aggiungi il primo elettrodomestico</button>`
             : grid}
         </div>
@@ -259,8 +295,8 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "elettrodomestici-card",
   name: "Elettrodomestici",
-  description: "Lavatrice, lavastoviglie, asciugatrice, forno, frigorifero, microonde e robot aspirapolvere: stato, consumi, costi, statistiche, grafici e controllo.",
+  description: "Lavatrice, lavastoviglie, asciugatrice, forno, frigorifero, microonde, robot aspirapolvere e umidostato: stato, consumi, costi, statistiche, grafici e controllo.",
 });
 
 // eslint-disable-next-line no-console
-console.info("%c ELETTRODOMESTICI %c v0.4.1 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
+console.info("%c ELETTRODOMESTICI %c v0.5.0 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");

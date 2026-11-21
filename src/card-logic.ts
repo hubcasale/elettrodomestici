@@ -1,10 +1,10 @@
 // Logica pura della scheda: etichette, tessere, frasi, statistiche, assi e campionamento dei grafici.
 // Nessuna dipendenza da Lit o da Home Assistant: si prova con node:test.
 import type {
-  ApplianceCfg, ApplianceInfo, ApplianceType, DayRec, HassState, HomeAssistant, MachineState, RawState, RobotInfo, Snapshot, TypeDefaults,
+  ApplianceCfg, ApplianceInfo, ApplianceType, DayRec, HassState, HomeAssistant, HumCfg, HumInfo, MachineState, RawState, RobotInfo, Snapshot, TypeDefaults,
 } from "./types";
 
-export const TYPES: ApplianceType[] = ["lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde", "aspirapolvere"];
+export const TYPES: ApplianceType[] = ["lavatrice", "lavastoviglie", "asciugatrice", "forno", "frigorifero", "microonde", "aspirapolvere", "umidostato"];
 
 export const TYPE_ICON: Record<ApplianceType, string> = {
   lavatrice: "mdi:washing-machine",
@@ -14,6 +14,7 @@ export const TYPE_ICON: Record<ApplianceType, string> = {
   frigorifero: "mdi:fridge",
   microonde: "mdi:microwave",
   aspirapolvere: "mdi:robot-vacuum",
+  umidostato: "mdi:fan",
 };
 export const TYPE_LABEL: Record<ApplianceType, string> = {
   lavatrice: "Lavatrice",
@@ -23,6 +24,7 @@ export const TYPE_LABEL: Record<ApplianceType, string> = {
   frigorifero: "Frigorifero",
   microonde: "Microonde",
   aspirapolvere: "Aspirapolvere",
+  umidostato: "Umidostato",
 };
 
 export const STATES: MachineState[] = ["spento", "in_funzione", "terminato", "non_disponibile"];
@@ -370,6 +372,7 @@ export function newAppliance(type: ApplianceType, entity: string, name: string, 
     extras: [],
     maker: null,
     maker_device: null,
+    ...(def.humidistat ? { fan_entity: null, hum: { ...(def.hum as HumCfg) } } : {}),
   };
 }
 
@@ -379,9 +382,28 @@ export function slug(text: string): string {
 }
 
 const ENTITY_RE = /^[a-z_]+\.[a-z0-9_]+$/;
+export function humError(a: ApplianceCfg): string | null {
+  const h = a.hum;
+  if (!a.entity.startsWith("sensor.") || !ENTITY_RE.test(a.entity)) return `${a.name}: scegli il sensore di umidità (un'entità sensor.…).`;
+  if (!a.fan_entity || !/^(switch|fan|light|input_boolean)\.[a-z0-9_]+$/.test(a.fan_entity)) return `${a.name}: scegli il ventilatore (switch, fan, light o input_boolean).`;
+  if (!h) return null;
+  if (a.light_entity && !/^(light|switch|input_boolean|binary_sensor)\.[a-z0-9_]+$/.test(a.light_entity)) return `${a.name}: la luce del bagno non è valida (light, switch, input_boolean o binary_sensor).`;
+  if (a.light_entity && a.light_entity === a.fan_entity) return `${a.name}: la luce e il ventilatore devono essere diversi.`;
+  if (a.light_entity && !(h.light_max >= 1)) return `${a.name}: il tempo massimo con la luce deve essere di almeno 1 minuto.`;
+  if (!(h.on_above > h.off_below)) return `${a.name}: la soglia di accensione deve essere più alta di quella di spegnimento.`;
+  if (h.max_on > 0 && h.min_on > h.max_on) return `${a.name}: il tempo minimo di accensione non può superare quello massimo.`;
+  return null;
+}
 export function appliancesError(list: ApplianceCfg[]): string | null {
   const seen = new Set<string>();
   for (const a of list) {
+    if (a.type === "umidostato") {
+      const e = humError(a);
+      if (e) return e;
+      if (seen.has(a.entity)) return `${a.name}: questo sensore è già usato da un altro elettrodomestico.`;
+      seen.add(a.entity);
+      continue;
+    }
     const robot = a.type === "aspirapolvere";
     if (!ENTITY_RE.test(a.entity) || (robot && !a.entity.startsWith("vacuum."))) return robot ? `${a.name}: scegli il robot (un'entità vacuum.…).` : `${a.name}: scegli il sensore di potenza della presa.`;
     if (seen.has(a.entity)) return `${a.name}: questo sensore è già usato da un altro elettrodomestico.`;
@@ -411,6 +433,12 @@ export const energySensors = (states: Record<string, HassState>): Candidate[] =>
 export const vacuumEntities = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] => candidates(states, (id) => id.startsWith("vacuum."), exclude);
 export const extraSensors = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] =>
   candidates(states, (id) => /^(sensor|binary_sensor|select|input_select|input_text|number|text|climate)\./.test(id), exclude);
+export const humiditySensors = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] =>
+  candidates(states, (id, st) => id.startsWith("sensor.") && (st.attributes.device_class === "humidity" || /umid|humid/.test(id)), exclude);
+export const lightEntities = (states: Record<string, HassState>, exclude: string[] = []): Candidate[] =>
+  candidates(states, (id) => /^(light|switch|input_boolean|binary_sensor)\./.test(id), exclude);
+export const fanEntities = (states: Record<string, HassState>): Candidate[] =>
+  candidates(states, (id) => /^(switch|fan|light|input_boolean)\./.test(id));
 export const counters = (states: Record<string, HassState>): Candidate[] => candidates(states, (id) => id.startsWith("counter."));
 export const statusSensors = (states: Record<string, HassState>): Candidate[] => candidates(states, (id) => id.startsWith("binary_sensor."));
 
@@ -422,6 +450,7 @@ const OLD_WORDS: Record<ApplianceType, RegExp> = {
   frigorifero: /frigo|fridge/,
   microonde: /micro/,
   aspirapolvere: /^$/,
+  umidostato: /^$/,
 };
 /** Il contatore dei cicli e il sensore di stato di un vecchio pacchetto basato su contatori e sensori di stato, se ci sono (id che parlano di quel tipo). */
 export function guessOldPackage(states: Record<string, HassState>, type: ApplianceType): { counter: string; status: string } {
@@ -779,5 +808,68 @@ export function robotModel(app: RobotInfo, hass: Pick<HomeAssistant, "states" | 
     canPause: activity === "cleaning" || activity === "returning",
     canStop: working,
     canHome: activity !== "docked" && activity !== "returning" && activity !== "unavailable",
+  };
+}
+
+// ---- umidostato
+export interface HumModel {
+  key: string;
+  name: string;
+  tone: Tone;
+  humidity: number | null;
+  fanOn: boolean | null;
+  auto: boolean;
+  statusLine: string;
+  waitText: string;
+  rule: string;
+  state: MachineState;
+}
+
+const HUM_UNTIL: Record<string, string> = { tempo_massimo: "limite di tempo", umidita_bassa: "umidità scesa", timer_luce: "timer della luce" };
+
+/** Frase "tra X" per un'attesa in secondi (arrotondata ai minuti sopra il minuto). */
+export function waitPhrase(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return s < 60 ? `${s} s` : `${Math.ceil(s / 60)} min`;
+}
+
+/** Umidità e ventilatore si leggono dagli stati dal vivo; la fase e le attese vengono dall'integrazione (arrivano con le informazioni). */
+export function humModel(app: HumInfo, hass: Pick<HomeAssistant, "states">, elapsedS = 0): HumModel {
+  const hs = hass.states[app.entity];
+  const fs = app.fan_entity ? hass.states[app.fan_entity] : undefined;
+  const humidity = toNumber(hs?.state);
+  const fanOn = !fs || ["unknown", "unavailable"].includes(fs.state) ? null : fs.state === "on";
+  const h = app.hum;
+  const auto = h.enabled;
+  const st = app.status;
+  const left = st.wait_s === null ? null : Math.max(0, st.wait_s - Math.max(0, elapsedS));   // l'attesa arriva con le informazioni: si scala il tempo passato da allora
+  const unavailable = humidity === null || fanOn === null;
+  let line: string;
+  let wait = "";
+  if (unavailable) line = "Non disponibile";
+  else if (!auto) line = fanOn ? "Acceso · automatico spento" : "Spento · automatico spento";
+  else if (fanOn) {
+    line = st.phase === "light" ? "Acceso con la luce" : "Acceso";
+    if (st.phase === "light" && left !== null) wait = `${left > 0 ? `tra ${waitPhrase(left)}` : "ora"} decide l'umidità: si spegne se è sotto ${h.off_below} %`;
+    else if (st.phase === "closing" && left !== null) wait = `si spegne tra ${waitPhrase(left)} se resta sotto ${h.off_below} %`;
+    else if (left !== null && st.until) wait = `si spegne comunque tra ${waitPhrase(left)} (${HUM_UNTIL[st.until] ?? st.until})`;
+  } else if (st.phase === "opening" && left !== null) {
+    line = "In attesa";
+    wait = `si accende tra ${waitPhrase(left)} se resta sopra ${h.on_above} %`;
+  } else if (st.phase === "locked") {
+    line = "Fermo";
+    wait = `riparte quando scende sotto ${h.on_above} % e risale`;
+  } else line = "Spento";
+  return {
+    key: app.key,
+    name: app.name,
+    tone: unavailable ? "bad" : fanOn ? "run" : "off",
+    humidity,
+    fanOn,
+    auto,
+    statusLine: line,
+    waitText: wait,
+    rule: `Accende sopra ${h.on_above} % · spegne sotto ${h.off_below} %`,
+    state: unavailable ? "non_disponibile" : fanOn ? "in_funzione" : "spento",
   };
 }

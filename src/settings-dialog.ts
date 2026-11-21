@@ -3,9 +3,21 @@ import { property, state } from "lit/decorators.js";
 import { dialogStyles } from "./dialog-style";
 import {
   TYPES, TYPE_ICON, TYPE_LABEL, appliancesError, energySensors, extraSensors, vacuumEntities, fmt, formatDuration, friendlyName, newAppliance, notifyServices,
-  powerSensors, priceSensors, counters, statusSensors, guessOldPackage,
+  powerSensors, priceSensors, counters, statusSensors, guessOldPackage, humiditySensors, fanEntities, lightEntities,
 } from "./card-logic";
-import type { ApplianceCfg, ApplianceType, ElettroInfo, HomeAssistant } from "./types";
+import type { ApplianceCfg, ApplianceType, ElettroInfo, HomeAssistant, HumCfg } from "./types";
+
+/** Campi dell'umidostato: umidità in %, tempi in minuti. */
+const HUM_FIELDS: { key: Exclude<keyof HumCfg, "enabled">; label: string; unit: string; hint: string }[] = [
+  { key: "on_above", label: "Accende sopra", unit: "%", hint: "Umidità oltre la quale il ventilatore si accende." },
+  { key: "on_delay", label: "Conferma accensione dopo", unit: "min", hint: "Deve restare sopra la soglia per tutto questo tempo: ignora i picchi brevi (la doccia che inizia). 0 = subito." },
+  { key: "off_below", label: "Spegne sotto", unit: "%", hint: "Deve essere più bassa di quella di accensione: la differenza evita che si accenda e spenga di continuo." },
+  { key: "off_delay", label: "Conferma spegnimento dopo", unit: "min", hint: "Deve restare sotto la soglia per tutto questo tempo. 0 = subito." },
+  { key: "min_on", label: "Acceso almeno", unit: "min", hint: "Non si spegne prima di questo tempo, anche se l'umidità scende subito." },
+  { key: "max_on", label: "Si spegne comunque dopo", unit: "min", hint: "Limite di sicurezza. Dopo lo spegnimento riparte solo quando l'umidità è scesa sotto la soglia di accensione e risale. 0 = nessun limite." },
+  { key: "min_off", label: "Resta spento almeno", unit: "min", hint: "Dopo lo spegnimento aspetta questo tempo prima di riaccendersi. 0 = nessuna attesa." },
+];
+const LIGHT_FIELD = { key: "light_max" as const, label: "Con la luce, acceso al massimo", unit: "min", hint: "Il ventilatore parte quando si accende la luce e resta acceso per questo tempo. Alla scadenza, se l'umidità è ancora sopra la soglia di spegnimento, decide la regola dell'umidità; altrimenti si spegne." };
 
 type NumKey = "start_w" | "stop_w" | "start_delay" | "end_delay" | "min_cycle" | "heat_w" | "maint_cycles" | "alert_minutes";
 const ADVANCED: { key: NumKey; label: string; unit: string; hint: string }[] = [
@@ -29,6 +41,7 @@ export class ElettroSettingsDialog extends LitElement {
   @state() private _open = "";
   @state() private _addType: ApplianceType | "" = "";
   @state() private _addEntity = "";
+  @state() private _addFan = "";
   @state() private _addName = "";
   @state() private _extra = "";
   @state() private _svc = "";
@@ -43,10 +56,11 @@ export class ElettroSettingsDialog extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("keydown", this._onKey);
-    this._list = [...this.info.appliances, ...(this.info.robots ?? [])].map((a) => ({
+    this._list = [...this.info.appliances, ...(this.info.robots ?? []), ...(this.info.humidistats ?? [])].map((a) => ({
       id: a.id, type: a.type, name: a.name, entity: a.entity, energy_entity: a.energy_entity, start_w: a.start_w, stop_w: a.stop_w,
       start_delay: a.start_delay, end_delay: a.end_delay, min_cycle: a.min_cycle, heat_w: a.heat_w, maint_cycles: a.maint_cycles,
       alert_minutes: a.alert_minutes, notify: a.notify, extras: a.extras.map((x) => ({ ...x })), maker: a.maker ?? null, maker_device: a.maker_device ?? null,
+      ...(a.type === "umidostato" ? { fan_entity: a.fan_entity ?? null, light_entity: a.light_entity ?? null, hum: a.hum ? { ...a.hum } : undefined } : {}),
     }));
     this._price = String(this.info.price_kwh);
     this._priceEntity = this.info.price_entity;
@@ -75,11 +89,40 @@ export class ElettroSettingsDialog extends LitElement {
     this._patch(a.id, { start_w: d.start_w, stop_w: d.stop_w, start_delay: d.start_delay, end_delay: d.end_delay, min_cycle: d.min_cycle, heat_w: d.heat_w });
   }
 
+  private _humPatch(id: string, p: Partial<HumCfg>): void {
+    this._list = this._list.map((a) => (a.id === id && a.hum ? { ...a, hum: { ...a.hum, ...p } } : a));
+  }
+
   private _add(): void {
     const type = this._addType;
     const entity = this._addEntity.trim();
     if (!type) return;
     const robot = this.info.types[type]?.robot === true;
+    const humidistat = this.info.types[type]?.humidistat === true;
+    if (humidistat) {
+      const fan = this._addFan.trim();
+      if (!/^sensor\.[a-z0-9_]+$/.test(entity)) {
+        this._error = "Scegli dall'elenco il sensore di umidità (un'entità sensor.…).";
+        return;
+      }
+      if (!/^(switch|fan|light|input_boolean)\.[a-z0-9_]+$/.test(fan)) {
+        this._error = "Scegli dall'elenco il ventilatore (un interruttore, un fan, una luce o un input_boolean).";
+        return;
+      }
+      if (this._list.some((a) => a.entity === entity)) {
+        this._error = "Questo sensore è già usato da un altro elettrodomestico.";
+        return;
+      }
+      const u = newAppliance(type, entity, this._addName.trim(), this.info.types[type], this._list.map((x) => x.id));
+      this._list = [...this._list, { ...u, fan_entity: fan }];
+      this._open = u.id;
+      this._addType = "";
+      this._addEntity = "";
+      this._addFan = "";
+      this._addName = "";
+      this._error = "";
+      return;
+    }
     if (!/^[a-z_]+\.[a-z0-9_]+$/.test(entity) || (robot && !entity.startsWith("vacuum."))) {
       this._error = robot ? "Scegli dall'elenco il robot (un'entità vacuum.…)." : "Scegli dall'elenco il sensore di potenza della presa.";
       return;
@@ -230,6 +273,47 @@ export class ElettroSettingsDialog extends LitElement {
         : nothing}`;
   }
 
+  private _hnum(a: ApplianceCfg, f: (typeof HUM_FIELDS)[number] | typeof LIGHT_FIELD) {
+    const h = a.hum as HumCfg;
+    return html`<label class="f">${f.label}
+      <span class="numrow"><input class="num" inputmode="decimal" .value=${String(h[f.key])} @change=${(e: Event) => {
+        const n = Number((e.target as HTMLInputElement).value.replace(",", "."));
+        if (Number.isFinite(n) && n >= 0) this._humPatch(a.id, { [f.key]: n } as Partial<HumCfg>);
+        else (e.target as HTMLInputElement).value = String(h[f.key]);
+      }} /><span class="u">${f.unit}</span></span>
+      <span class="hint">${f.hint}</span></label>`;
+  }
+
+  private _humEditor(a: ApplianceCfg) {
+    const h = a.hum as HumCfg;
+    const live = this.hass.states[a.entity];
+    const fan = a.fan_entity ? this.hass.states[a.fan_entity] : undefined;
+    const exclude = this._list.filter((x) => x.id !== a.id).map((x) => x.entity);
+    const defaults = this.info.types[a.type]?.hum;
+    return html`
+      <div class="ed">
+        <div class="link"><ha-icon icon="mdi:water-percent"></ha-icon>Umidità: <b>${friendlyName(this.hass.states, a.entity)}</b> <code>${a.entity}</code> · ora ${live ? `${live.state} ${String(live.attributes.unit_of_measurement ?? "")}`.trim() : "non disponibile"}</div>
+        <div class="link"><ha-icon icon="mdi:fan"></ha-icon>Ventilatore: <b>${a.fan_entity ? friendlyName(this.hass.states, a.fan_entity) : "da scegliere"}</b> <code>${a.fan_entity ?? ""}</code> · ora ${fan ? fan.state : "non disponibile"}</div>
+        <label class="f">Nome<input class="txt" .value=${a.name} @change=${(e: Event) => this._patch(a.id, { name: (e.target as HTMLInputElement).value.trim() || a.name })} /></label>
+        <label class="f">Sensore di umidità (%)
+          <input class="txt" list=${`dl-hu-${a.id}`} .value=${a.entity} @change=${(e: Event) => this._patch(a.id, { entity: (e.target as HTMLInputElement).value.trim() })} />
+          <datalist id=${`dl-hu-${a.id}`}>${humiditySensors(this.hass.states, exclude).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>
+        <label class="f">Ventilatore da comandare
+          <input class="txt" list=${`dl-fn-${a.id}`} .value=${a.fan_entity ?? ""} @change=${(e: Event) => this._patch(a.id, { fan_entity: (e.target as HTMLInputElement).value.trim() || null })} />
+          <datalist id=${`dl-fn-${a.id}`}>${fanEntities(this.hass.states).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist>
+          <span class="hint">L'umidostato accende e spegne questa entità da solo. Se l'hai accesa a mano, si spegne con le stesse regole.</span></label>
+        <label class="f">Luce del bagno (facoltativa)
+          <input class="txt" list=${`dl-lt-${a.id}`} placeholder="light.… o switch.…" .value=${a.light_entity ?? ""} @change=${(e: Event) => this._patch(a.id, { light_entity: (e.target as HTMLInputElement).value.trim() || null })} />
+          <datalist id=${`dl-lt-${a.id}`}>${lightEntities(this.hass.states, [a.fan_entity ?? ""]).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist>
+          <span class="hint">Accendendo questa luce il ventilatore parte anche se l'umidità è bassa. Lascia vuoto per usare solo l'umidità.</span></label>
+        <div class="row"><div class="t"><div class="lab">Regolazione automatica</div><div class="hint">Spenta, il ventilatore resta com'è e si comanda solo a mano. Si cambia anche dalla scheda.</div></div>
+          <button class=${h.enabled ? "sw on" : "sw"} role="switch" aria-checked=${h.enabled ? "true" : "false"} aria-label="Regolazione automatica" @click=${() => this._humPatch(a.id, { enabled: !h.enabled })}><span class="knob"></span></button></div>
+        <div class="two">${[...HUM_FIELDS, ...(a.light_entity ? [LIGHT_FIELD] : [])].map((f) => this._hnum(a, f))}</div>
+        ${defaults ? html`<button class="btn" @click=${() => this._humPatch(a.id, { ...defaults, enabled: h.enabled })}>Ripristina i valori predefiniti</button>` : nothing}
+        <button class="btn del" @click=${() => this._remove(a.id)}>Togli dall'elenco</button>
+      </div>`;
+  }
+
   private _robotEditor(a: ApplianceCfg) {
     const live = this.hass.states[a.entity];
     const exclude = this._list.filter((x) => x.id !== a.id).map((x) => x.entity);
@@ -247,6 +331,7 @@ export class ElettroSettingsDialog extends LitElement {
 
   private _editor(a: ApplianceCfg) {
     if (this.info.types[a.type]?.robot) return this._robotEditor(a);
+    if (this.info.types[a.type]?.humidistat && a.hum) return this._humEditor(a);
     const d = this.info.types[a.type];
     const live = this.hass.states[a.entity];
     const exclude = this._list.filter((x) => x.id !== a.id).map((x) => x.entity);
@@ -333,7 +418,14 @@ export class ElettroSettingsDialog extends LitElement {
             </div>
             ${def
               ? html`<div class="addbox">
-                  ${def.robot
+                  ${def.humidistat
+                    ? html`<label class="f">Sensore di umidità (%)
+                        <input class="txt" list="dl-add" placeholder="sensor.…_umidita" .value=${this._addEntity} @input=${(e: Event) => (this._addEntity = (e.target as HTMLInputElement).value)} />
+                        <datalist id="dl-add">${humiditySensors(this.hass.states, used).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>
+                      <label class="f">Ventilatore da comandare
+                        <input class="txt" list="dl-add-fan" placeholder="switch.…" .value=${this._addFan} @input=${(e: Event) => (this._addFan = (e.target as HTMLInputElement).value)} />
+                        <datalist id="dl-add-fan">${fanEntities(this.hass.states).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>`
+                    : def.robot
                     ? html`<label class="f">Robot (entità vacuum)
                         <input class="txt" list="dl-add" placeholder="vacuum.…" .value=${this._addEntity} @input=${(e: Event) => (this._addEntity = (e.target as HTMLInputElement).value)} />
                         <datalist id="dl-add">${vacuumEntities(this.hass.states, used).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>`
@@ -341,10 +433,12 @@ export class ElettroSettingsDialog extends LitElement {
                         <input class="txt" list="dl-add" placeholder="sensor.presa_…_potenza" .value=${this._addEntity} @input=${(e: Event) => (this._addEntity = (e.target as HTMLInputElement).value)} />
                         <datalist id="dl-add">${powerSensors(this.hass.states, used).map((c) => html`<option value=${c.id}>${c.name}</option>`)}</datalist></label>`}
                   <label class="f">Nome (facoltativo)<input class="txt" placeholder=${def.label} .value=${this._addName} @input=${(e: Event) => (this._addName = (e.target as HTMLInputElement).value)} /></label>
-                  ${def.robot
+                  ${def.humidistat
+                    ? html`<div class="hint">Accende il ventilatore quando l'umidità resta sopra ${def.hum?.on_above} % per ${def.hum?.on_delay} min e lo spegne sotto ${def.hum?.off_below} % per ${def.hum?.off_delay} min (massimo ${def.hum?.max_on} min). Tutte le soglie si cambiano dopo.</div>`
+                    : def.robot
                     ? html`<div class="hint">Sulla scheda compare con stato, batteria e comandi rapidi; toccandolo si apre la gestione completa (stanze, impostazioni, base, consumabili).</div>`
                     : html`<div class="hint">Parte oltre ${def.start_w} W${def.phases.length > 1 ? `, fasi: ${def.phases.join(" → ")}` : ""}${def.has_finished ? `, finisce dopo ${formatDuration(def.end_delay)} sotto ${def.stop_w} W` : ""}. Le soglie si possono cambiare dopo.</div>`}
-                  <button class="btn primary" ?disabled=${!this._addEntity.trim()} @click=${() => this._add()}>Aggiungi ${def.label.toLowerCase()}</button>
+                  <button class="btn primary" ?disabled=${!this._addEntity.trim() || (!!def.humidistat && !this._addFan.trim())} @click=${() => this._add()}>Aggiungi ${def.label.toLowerCase()}</button>
                 </div>`
               : nothing}
 

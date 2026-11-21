@@ -99,7 +99,21 @@ if (rb) {
   robots.push({ id:"robot", key:"robot", kind:"robot", type:"aspirapolvere", name:"Robot", entity:"vacuum.d20_ultra", energy_entity:null, start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, notify:false, extras:[], maker:null, maker_device:null, robot_entities:robotEnts });
   types.aspirapolvere = { label:"Aspirapolvere", icon:"mdi:robot-vacuum", off_label:"Alla base", done_label:"", has_finished:false, notify:false, maint_label:"", phases:["In pulizia"], start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, robot:true };
 }
-const info = { entry_id:"e1", title:"Elettrodomestici", price_kwh:0.3, price_entity:"", notify_services:["notify.mobile_app_pixel"], types, robots, makers:[{maker:"electrolux",label:"Electrolux",device_id:"dev1",name:"Asciugatrice"}], appliances: params.get("empty")==="1"?[]:appliances };
+const humidistats = [];
+{
+  const mode = params.get("hum");
+  if (mode) {
+    const hv = { on:"78", opening:"74", closing:"52", off:"55", locked:"82", manual:"80", light:"52" }[mode] ?? "55";
+    const fan = ["on","closing","manual","light"].includes(mode) ? "on" : "off";
+    states["sensor.bagno_verde_umidita"] = { entity_id:"sensor.bagno_verde_umidita", state:hv, attributes:{ unit_of_measurement:"%", device_class:"humidity", friendly_name:"Bagno verde umidità" } };
+    states["switch.bagno_verde_ventilatore"] = { entity_id:"switch.bagno_verde_ventilatore", state:fan, attributes:{ friendly_name:"Ventilatore bagno verde" } };
+    const status = { on:{phase:"on",wait_s:2700,on_for_s:900,until:"tempo_massimo"}, opening:{phase:"opening",wait_s:75,on_for_s:null}, closing:{phase:"closing",wait_s:140,on_for_s:600,until:"umidita_bassa"}, off:{phase:"off",wait_s:null,on_for_s:null}, locked:{phase:"locked",wait_s:null,on_for_s:null}, manual:{phase:"on",wait_s:null,on_for_s:60}, light:{phase:"light",wait_s:420,on_for_s:180,until:"timer_luce"} }[mode] ?? {phase:"off",wait_s:null,on_for_s:null};
+    const hum = { enabled: mode !== "manual", on_above:70, on_delay:2, off_below:60, off_delay:3, min_on:5, max_on:60, min_off:0, light_max:10 };
+    humidistats.push({ id:"bagno_verde", key:"bagno_verde", kind:"humidistat", type:"umidostato", name:"Umidostato bagno verde", entity:"sensor.bagno_verde_umidita", fan_entity:"switch.bagno_verde_ventilatore", light_entity: mode==="light"?"light.bagno_verde":null, energy_entity:null, start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, notify:false, extras:[], maker:null, maker_device:null, hum, status });
+    types.umidostato = { label:"Umidostato", icon:"mdi:fan", off_label:"Ventilatore spento", done_label:"", has_finished:false, notify:false, maint_label:"", phases:["Ventilazione"], start_w:0, stop_w:0, start_delay:0, end_delay:1, min_cycle:0, heat_w:1, maint_cycles:0, alert_minutes:0, robot:false, humidistat:true, hum:{ enabled:true, on_above:70, on_delay:2, off_below:60, off_delay:3, min_on:5, max_on:60, min_off:0, light_max:10 } };
+  }
+}
+const info = { entry_id:"e1", title:"Elettrodomestici", price_kwh:0.3, price_entity:"", notify_services:["notify.mobile_app_pixel"], types, robots, humidistats, makers:[{maker:"electrolux",label:"Electrolux",device_id:"dev1",name:"Asciugatrice"}], appliances: params.get("empty")==="1"?[]:appliances };
 function history(ids, start, end) {
   const out = {};
   ids.forEach((id) => {

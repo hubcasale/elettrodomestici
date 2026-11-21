@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any
+
+try:                                  # dentro Home Assistant è un pacchetto; nei test il file si importa da solo
+    from . import humidistat as hmd
+except ImportError:                   # pragma: no cover
+    import humidistat as hmd  # type: ignore[no-redef]
 
 STATE_OFF = "spento"
 STATE_RUN = "in_funzione"
@@ -23,6 +28,8 @@ KEEP_DAYS = 800
 
 MAKER_TYPES = ("electrolux",)
 ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
+FAN_RE = re.compile(r"^(switch|fan|light|input_boolean)\.[a-z0-9_]+$")
+LIGHT_RE = re.compile(r"^(light|switch|input_boolean|binary_sensor)\.[a-z0-9_]+$")
 
 
 # ---------------------------------------------------------------------- profili
@@ -56,6 +63,7 @@ class Profile:
     maint_label: str
     steps: tuple[Step, ...]
     robot: bool = False                  # robot aspirapolvere: non ha presa, si guida dall'entità vacuum.*
+    humidistat: bool = False             # umidostato: legge l'umidità di un sensore e comanda un ventilatore, senza presa né cicli
 
 
 PROFILES: dict[str, Profile] = {
@@ -100,6 +108,11 @@ PROFILES: dict[str, Profile] = {
         start_w=0, stop_w=0, start_delay=0, end_delay=1, min_cycle=0, heat_w=1, phase_gap=60, merge_gap=0,
         maint_cycles=0, alert_minutes=0, notify=False, maint_label="", steps=(Step("In pulizia"),), robot=True,
     ),
+    "umidostato": Profile(
+        "umidostato", "Umidostato", "mdi:fan", "Ventilatore spento", "", False,
+        start_w=0, stop_w=0, start_delay=0, end_delay=1, min_cycle=0, heat_w=1, phase_gap=60, merge_gap=0,
+        maint_cycles=0, alert_minutes=0, notify=False, maint_label="", steps=(Step("Ventilazione"),), humidistat=True,
+    ),
 }
 
 TUNABLE = ("start_w", "stop_w", "start_delay", "end_delay", "min_cycle", "heat_w", "maint_cycles", "alert_minutes")
@@ -112,6 +125,7 @@ def profile_defaults() -> dict[str, dict[str, Any]]:
         out[t] = {
             "label": p.label, "icon": p.icon, "off_label": p.off_label, "done_label": p.done_label, "has_finished": p.has_finished,
             "notify": p.notify, "maint_label": p.maint_label, "phases": [s.name for s in p.steps], "robot": p.robot,
+            "humidistat": p.humidistat, **({"hum": dict(hmd.DEFAULTS)} if p.humidistat else {}),
             **{k: getattr(p, k) for k in TUNABLE},
         }
     return out
@@ -152,6 +166,9 @@ class ApplianceConfig:
     extras: tuple[tuple[str, str], ...] = ()   # (entità, etichetta): programma, tempo rimanente, stato del costruttore...
     maker: str | None = None                   # integrazione del costruttore da cui prendere stato, fase, programma e tempo rimanente
     maker_device: str | None = None            # dispositivo di quell'integrazione (id del registro dispositivi)
+    fan_entity: str | None = None              # umidostato: il ventilatore (switch, fan, light, input_boolean) che si accende e spegne
+    light_entity: str | None = None            # umidostato: la luce del bagno (facoltativa): accendendola parte anche il ventilatore
+    hum: dict[str, Any] = field(default_factory=dict)   # umidostato: soglie e tempi (vedi humidistat.DEFAULTS)
 
     @property
     def profile(self) -> Profile:
@@ -161,6 +178,15 @@ class ApplianceConfig:
     def is_robot(self) -> bool:
         return PROFILES[self.type].robot
 
+    @property
+    def is_humidistat(self) -> bool:
+        return PROFILES[self.type].humidistat
+
+    @property
+    def is_plug(self) -> bool:
+        """Ha una presa di cui seguire la potenza (lavatrice, forno...): non il robot e non l'umidostato."""
+        return not self.is_robot and not self.is_humidistat
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id, "type": self.type, "name": self.name, "entity": self.entity, "energy_entity": self.energy_entity,
@@ -169,6 +195,7 @@ class ApplianceConfig:
             "alert_minutes": self.alert_minutes, "notify": self.notify,
             "extras": [{"entity": e, "label": l} for e, l in self.extras],
             "maker": self.maker, "maker_device": self.maker_device,
+            "fan_entity": self.fan_entity, "light_entity": self.light_entity, "hum": dict(self.hum),
         }
 
     @staticmethod
@@ -181,6 +208,12 @@ class ApplianceConfig:
             return None
         p = PROFILES[typ]
         if p.robot and not entity.strip().startswith("vacuum."):
+            return None
+        fan = d.get("fan_entity")
+        fan = fan.strip() if isinstance(fan, str) and FAN_RE.match(fan.strip()) else None
+        light = d.get("light_entity")
+        light = light.strip() if isinstance(light, str) and LIGHT_RE.match(light.strip()) and light.strip() != fan else None
+        if p.humidistat and (fan is None or not entity.strip().startswith("sensor.") or fan == entity.strip()):
             return None
         name = str(d.get("name") or "").strip()[:60] or p.label
         energy = d.get("energy_entity")
@@ -217,6 +250,9 @@ class ApplianceConfig:
             extras=tuple(extras),
             maker=maker,
             maker_device=maker_device,
+            fan_entity=fan if p.humidistat else None,
+            light_entity=light if p.humidistat else None,
+            hum=hmd.normalize(d.get("hum")) if p.humidistat else {},
         )
 
 

@@ -15,11 +15,12 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from . import engine as eng
+from . import humidistat as hmd
 from . import maker as mk
 from . import robot as rb
 from .const import (
     CONF_APPLIANCES, CONF_NOTIFY, CONF_PRICE, CONF_PRICE_ENTITY, DEFAULT_PRICE, DOMAIN, EVENT_ALERT, EVENT_FINISHED, MAX_GAP,
-    SAVE_EVERY, SIGNAL_UPDATE, STORAGE_VERSION, TICK_SECONDS,
+    EVENT_HUMIDISTAT, SAVE_EVERY, SIGNAL_UPDATE, STORAGE_VERSION, TICK_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,6 +66,8 @@ class ElettroController:
         self.hass = hass
         self.entry = entry
         self.machines: dict[str, eng.Machine] = {}
+        self.hums: dict[str, hmd.Humidistat] = {}       # umidostati: un motore per ognuno, senza ciclo né statistiche
+        self.hum_cfg: dict[str, eng.ApplianceConfig] = {}
         self.days: dict[str, dict[str, dict[str, float]]] = {}
         self.cycles: dict[str, list[eng.Cycle]] = {}
         self.maint: dict[str, int] = {}
@@ -89,6 +92,10 @@ class ElettroController:
         saved = await self._store.async_load() or {}
         now = dt_util.now()
         for cfg in self.configs():
+            if cfg.is_humidistat:
+                self.hums[cfg.id] = hmd.Humidistat(cfg.hum)
+                self.hum_cfg[cfg.id] = cfg
+                continue
             if cfg.is_robot:
                 continue                                  # il robot si guida dall'entità vacuum.*: niente presa, niente ciclo da seguire
             m = eng.Machine(cfg)
@@ -100,10 +107,13 @@ class ElettroController:
             self.baseline[cfg.id] = int((saved.get("baseline") or {}).get(cfg.id, 0))
             self._energy_last[cfg.id] = None
             eng.prune_days(self.days[cfg.id], now.date())
-        plugs = [c for c in self.configs() if not c.is_robot]
+        plugs = [c for c in self.configs() if c.is_plug]
         watch = [c.entity for c in plugs] + [c.energy_entity for c in plugs if c.energy_entity]
         if watch:
             self._unsubs.append(async_track_state_change_event(self.hass, watch, self._on_source))
+        hum_watch = [e for c in self.hum_cfg.values() for e in (c.entity, c.fan_entity, c.light_entity) if e]
+        if hum_watch:
+            self._unsubs.append(async_track_state_change_event(self.hass, hum_watch, self._on_hum_source))
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, timedelta(seconds=TICK_SECONDS)))
         for key, m in self.machines.items():
             st = self.hass.states.get(m.cfg.entity)
@@ -193,10 +203,48 @@ class ElettroController:
             self._save_soon()
             self._update()
 
+    # ------------------------------------------------------------------ umidostati
+    def _hum_inputs(self, cfg: eng.ApplianceConfig) -> tuple[float | None, bool | None, bool | None]:
+        """Umidità (%), stato del ventilatore e della luce del bagno (True/False; None se non disponibile o non scelta)."""
+        humidity = _to_float(self.hass.states.get(cfg.entity))
+        fan = self.hass.states.get(cfg.fan_entity) if cfg.fan_entity else None
+        fan_on = None if fan is None or fan.state in _BAD else fan.state == "on"
+        light = self.hass.states.get(cfg.light_entity) if cfg.light_entity else None
+        light_on = None if light is None or light.state in _BAD else light.state == "on"
+        return humidity, fan_on, light_on
+
+    def _hum_step(self, key: str, now: datetime) -> bool:
+        """Fa un passo del motore e, se serve, accende o spegne il ventilatore. True se qualcosa è cambiato per la scheda."""
+        cfg, h = self.hum_cfg[key], self.hums[key]
+        humidity, fan_on, light_on = self._hum_inputs(cfg)
+        before = (h.above_since is not None, h.below_since is not None, h.locked, h.on_since is not None, h.light_until is not None)
+        action, reason = h.step(now, humidity, fan_on, light_on)
+        if action and cfg.fan_entity:
+            self.hass.bus.async_fire(EVENT_HUMIDISTAT, {"id": key, "name": cfg.name, "action": action, "reason": reason, "humidity": humidity})
+            self.hass.async_create_task(self._hum_command(cfg.fan_entity, action == "on", cfg.name))
+        return bool(action) or before != (h.above_since is not None, h.below_since is not None, h.locked, h.on_since is not None, h.light_until is not None)
+
+    async def _hum_command(self, entity: str, turn_on: bool, name: str) -> None:
+        try:
+            await self.hass.services.async_call("homeassistant", "turn_on" if turn_on else "turn_off", {"entity_id": entity}, blocking=True)
+        except HomeAssistantError as err:
+            _LOGGER.warning("Umidostato %s: comando a %s non riuscito: %s", name, entity, err)
+
+    @callback
+    def _on_hum_source(self, _event: Event[EventStateChangedData]) -> None:
+        now = dt_util.now()
+        changed = False
+        for key in self.hums:
+            changed = self._hum_step(key, now) or changed
+        if changed:
+            self._update()
+
     @callback
     def _on_tick(self, _now: datetime) -> None:
         now = dt_util.now()
         changed = False
+        for key in self.hums:
+            changed = self._hum_step(key, now) or changed
         running = False
         for key, m in self.machines.items():
             self._account(key, now)
@@ -265,6 +313,13 @@ class ElettroController:
     # ------------------------------------------------------------------ azioni
     @callback
     def action(self, key: str, action: str) -> bool:
+        if key in self.hums and action in ("auto_on", "auto_off"):
+            options = dict(self.entry.options)
+            options[CONF_APPLIANCES] = [
+                {**a.to_dict(), "hum": {**a.hum, "enabled": action == "auto_on"}} if a.id == key else a.to_dict() for a in self.configs()
+            ]
+            self.hass.config_entries.async_update_entry(self.entry, options=options)
+            return True
         m = self.machines.get(key)
         if m is None:
             return False
@@ -287,6 +342,11 @@ class ElettroController:
             cfg = by_id.get(key)
             if cfg is not None:
                 m.reconfigure(cfg)
+        for key, h in self.hums.items():
+            cfg = by_id.get(key)
+            if cfg is not None:
+                self.hum_cfg[key] = cfg
+                h.reconfigure(cfg.hum)
         self._save_soon()
         self._update()
 
@@ -427,6 +487,12 @@ class ElettroController:
     def _info_item(self, cfg: eng.ApplianceConfig) -> dict[str, Any] | None:
         if cfg.is_robot:
             return {**cfg.to_dict(), "key": cfg.id, "kind": "robot", "robot_entities": rb.entities_of(self.hass, cfg.entity)}
+        if cfg.is_humidistat:
+            h = self.hums.get(cfg.id)
+            if h is None:                                 # appena aggiunto: la voce si sta per ricaricare
+                return None
+            humidity, fan_on, _light = self._hum_inputs(cfg)
+            return {**cfg.to_dict(), "key": cfg.id, "kind": "humidistat", "status": h.status(dt_util.now(), humidity, fan_on)}
         m = self.machines.get(cfg.id)
         if m is None:                                     # appena aggiunto: la voce si sta per ricaricare
             return None
@@ -444,8 +510,9 @@ class ElettroController:
             "notify_services": list(self.entry.options.get(CONF_NOTIFY) or []),
             "types": eng.profile_defaults(),
             "makers": mk.discover(self.hass),
-            "appliances": [i for i in (self._info_item(c) for c in self.configs() if not c.is_robot) if i is not None],
+            "appliances": [i for i in (self._info_item(c) for c in self.configs() if c.is_plug) if i is not None],
             "robots": [self._info_item(c) for c in self.configs() if c.is_robot],
+            "humidistats": [i for i in (self._info_item(c) for c in self.configs() if c.is_humidistat) if i is not None],
         }
 
 

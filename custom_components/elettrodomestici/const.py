@@ -21,3 +21,4 @@ MAX_GAP = 600                             # secondi: oltre, l'intervallo senza l
 
 EVENT_FINISHED = f"{DOMAIN}_ciclo_terminato"
 EVENT_ALERT = f"{DOMAIN}_avviso"
+EVENT_HUMIDISTAT = f"{DOMAIN}_umidostato"

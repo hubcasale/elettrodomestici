@@ -137,6 +137,20 @@ function robot(state: MachineState): string {
   ${on ? '<g fill="#38bdf8" opacity=".8"><circle class="bl" cx="98" cy="86" r="2"/><circle class="bl" cx="104" cy="74" r="2" style="animation-delay:.5s"/><circle class="bl" cx="94" cy="68" r="2" style="animation-delay:1s"/></g>' : ""}`;
 }
 
+function fan(state: MachineState): string {
+  const on = state === "in_funzione";
+  const blade = on ? "#38bdf8" : "#94a3b8";
+  return `<rect x="14" y="14" width="92" height="92" rx="16" fill="${BODY}" stroke="${BODY_DARK}" stroke-width="2.4"/>
+  <circle cx="60" cy="60" r="38" fill="#f4f5f7" stroke="${BODY_DARK}" stroke-width="1.6"/>
+  <g class="${on ? "sp" : ""}" fill="${blade}" opacity=".95">
+    <path d="M60 60C52 44 56 30 60 24c4 6 8 20 0 36z"/><path d="M60 60c16-8 30-4 36 0-6 4-20 8-36 0z"/>
+    <path d="M60 60c8 16 4 30 0 36-4-6-8-20 0-36z"/><path d="M60 60C44 68 30 64 24 60c6-4 20-8 36 0z"/>
+  </g>
+  <circle cx="60" cy="60" r="6" fill="${BODY_DARK}"/>
+  <rect x="24" y="112" width="72" height="14" rx="7" fill="${PANEL}" opacity=".3"/>
+  ${led(state, 96, 118)}`;
+}
+
 export function applianceSvg(type: ApplianceType, state: MachineState): string {
   const body =
     type === "lavatrice" ? washer(state, false)
@@ -145,6 +159,7 @@ export function applianceSvg(type: ApplianceType, state: MachineState): string {
     : type === "forno" ? oven(state)
     : type === "frigorifero" ? fridge(state)
     : type === "aspirapolvere" ? robot(state)
+    : type === "umidostato" ? fan(state)
     : microwave(state);
   const dim = state === "non_disponibile" ? ' opacity=".45"' : "";
   return `<svg viewBox="0 0 120 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${type} ${state.replace("_", " ")}">${STYLE}<g${dim}>${body}</g></svg>`;

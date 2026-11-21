@@ -77,9 +77,12 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 def _entity_sets_changed(entry: ConfigEntry, controller: ElettroController) -> bool:
     """Le sorgenti (presa, contatore) e la soglia di manutenzione decidono ascolti ed entità: se cambiano si ricarica."""
-    new = {c.id: (c.entity, c.energy_entity, c.maint_cycles > 0, c.profile.has_finished) for c in parse_appliances(entry.options.get(CONF_APPLIANCES)) if not c.is_robot}
+    cfgs = parse_appliances(entry.options.get(CONF_APPLIANCES))
+    new = {c.id: (c.entity, c.energy_entity, c.maint_cycles > 0, c.profile.has_finished) for c in cfgs if c.is_plug}
     old = {k: (m.cfg.entity, m.cfg.energy_entity, m.cfg.maint_cycles > 0, m.profile.has_finished) for k, m in controller.machines.items()}
-    return new != old
+    new_hum = {c.id: (c.entity, c.fan_entity, c.light_entity) for c in cfgs if c.is_humidistat}
+    old_hum = {k: (c.entity, c.fan_entity, c.light_entity) for k, c in controller.hum_cfg.items()}
+    return new != old or new_hum != old_hum
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

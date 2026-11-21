@@ -1,4 +1,4 @@
-export type ApplianceType = "lavatrice" | "lavastoviglie" | "asciugatrice" | "forno" | "frigorifero" | "microonde" | "aspirapolvere";
+export type ApplianceType = "lavatrice" | "lavastoviglie" | "asciugatrice" | "forno" | "frigorifero" | "microonde" | "aspirapolvere" | "umidostato";
 export type MachineState = "spento" | "in_funzione" | "terminato" | "non_disponibile";
 
 export interface HassState {
@@ -42,6 +42,26 @@ export interface ApplianceCfg {
   /** integrazione del costruttore da cui prendere stato, fase, programma e tempo rimanente (per ora solo "electrolux") */
   maker: string | null;
   maker_device: string | null;
+  /** umidostato: il ventilatore (switch, fan, light, input_boolean) comandato; l'entità principale è il sensore di umidità */
+  fan_entity?: string | null;
+  /** umidostato: la luce del bagno (facoltativa): accendendola parte anche il ventilatore */
+  light_entity?: string | null;
+  /** umidostato: soglie e tempi */
+  hum?: HumCfg;
+}
+
+/** Soglie dell'umidostato: umidità in %, tempi in minuti. */
+export interface HumCfg {
+  enabled: boolean;
+  on_above: number;
+  on_delay: number;
+  off_below: number;
+  off_delay: number;
+  min_on: number;
+  max_on: number;
+  min_off: number;
+  /** minuti di accensione massima quando parte per la luce (poi decide l'umidità) */
+  light_max: number;
 }
 
 export interface MakerDevice {
@@ -97,6 +117,14 @@ export interface RobotInfo extends ApplianceCfg {
   robot_entities: Record<string, string>;
 }
 
+/** Umidostato: il sensore di umidità è `entity`, il ventilatore `fan_entity`; `status` è lo stato del motore (fase e attesa in secondi). */
+export interface HumInfo extends ApplianceCfg {
+  key: string;
+  kind: "humidistat";
+  hum: HumCfg;
+  status: { phase: "off" | "on" | "light" | "opening" | "closing" | "locked" | "unavailable"; wait_s: number | null; on_for_s: number | null; until?: string };
+}
+
 export interface TypeDefaults {
   label: string;
   icon: string;
@@ -115,6 +143,8 @@ export interface TypeDefaults {
   maint_cycles: number;
   alert_minutes: number;
   robot?: boolean;
+  humidistat?: boolean;
+  hum?: HumCfg;
 }
 
 export interface ElettroInfo {
@@ -126,6 +156,7 @@ export interface ElettroInfo {
   types: Record<ApplianceType, TypeDefaults>;
   appliances: ApplianceInfo[];
   robots?: RobotInfo[];
+  humidistats?: HumInfo[];
   makers?: MakerDevice[];
 }
 

@@ -302,3 +302,63 @@ test("robot: piano di avvio (tutto, una stanza, più stanze, passate)", () => {
   assert.deepEqual(robotPlan(rooms, [2], 2, false), { label: "Pulisci tutta la casa", segments: null, repeats: 1 });
   assert.deepEqual(robotPlan([], [], 2, true).segments, null);
 });
+
+// ---- umidostato
+import { humError, humModel, waitPhrase } from "../src/card-logic";
+import type { HumInfo } from "../src/types";
+
+const HUM_CFG = { enabled: true, on_above: 70, on_delay: 2, off_below: 60, off_delay: 3, min_on: 5, max_on: 60, min_off: 0, light_max: 10 };
+function humInfo(over: Partial<HumInfo> = {}, status: Partial<HumInfo["status"]> = {}): HumInfo {
+  return {
+    id: "bagno_verde", type: "umidostato", name: "Bagno verde", entity: "sensor.umidita", fan_entity: "switch.ventilatore", energy_entity: null,
+    start_w: 0, stop_w: 0, start_delay: 0, end_delay: 1, min_cycle: 0, heat_w: 1, maint_cycles: 0, alert_minutes: 0, notify: false, extras: [],
+    maker: null, maker_device: null, key: "bagno_verde", kind: "humidistat", hum: { ...HUM_CFG },
+    status: { phase: "off", wait_s: null, on_for_s: null, ...status }, ...over,
+  } as HumInfo;
+}
+const hs = (hum: string, fan: string) => ({ states: { "sensor.umidita": { state: hum, attributes: {} }, "switch.ventilatore": { state: fan, attributes: {} } } });
+
+test("umidostato: spento, in attesa di accendersi, con il conto alla rovescia", () => {
+  assert.equal(humModel(humInfo(), hs("55", "off")).statusLine, "Spento");
+  const w = humModel(humInfo({}, { phase: "opening", wait_s: 90 }), hs("75", "off"));
+  assert.equal(w.statusLine, "In attesa");
+  assert.match(w.waitText, /si accende tra 2 min se resta sopra 70 %/);
+  assert.match(humModel(humInfo({}, { phase: "opening", wait_s: 90 }), hs("75", "off"), 60).waitText, /tra 30 s/);   // l'attesa scala il tempo passato dal caricamento
+});
+
+test("umidostato: acceso, in chiusura, limite di tempo, automatico spento", () => {
+  const on = humModel(humInfo({}, { phase: "on", wait_s: 1800, on_for_s: 100, until: "tempo_massimo" }), hs("80", "on"));
+  assert.equal(on.tone, "run");
+  assert.match(on.waitText, /si spegne comunque tra 30 min/);
+  assert.match(humModel(humInfo({}, { phase: "closing", wait_s: 120, until: "umidita_bassa" }), hs("50", "on")).waitText, /sotto 60 %/);
+  const manual = humModel(humInfo({ hum: { ...HUM_CFG, enabled: false } }), hs("80", "on"));
+  assert.equal(manual.auto, false);
+  assert.equal(manual.statusLine, "Acceso · automatico spento");
+  assert.equal(manual.waitText, "");
+});
+
+test("umidostato: non disponibile e valori letti dal vivo", () => {
+  assert.equal(humModel(humInfo(), hs("unavailable", "off")).state, "non_disponibile");
+  assert.equal(humModel(humInfo(), hs("55", "unavailable")).tone, "bad");
+  assert.equal(humModel(humInfo(), hs("55.4", "off")).humidity, 55.4);
+  assert.equal(waitPhrase(30), "30 s");
+  assert.equal(waitPhrase(61), "2 min");
+});
+
+test("umidostato: controlli di validità delle preferenze", () => {
+  assert.equal(humError(humInfo()), null);
+  assert.match(humError(humInfo({ fan_entity: null }))!, /ventilatore/);
+  assert.match(humError(humInfo({ entity: "binary_sensor.x" }))!, /sensore di umidità/);
+  assert.match(humError(humInfo({ hum: { ...HUM_CFG, off_below: 80 } }))!, /più alta/);
+  assert.match(humError(humInfo({ hum: { ...HUM_CFG, min_on: 90, max_on: 60 } }))!, /minimo/);
+});
+
+test("umidostato: acceso con la luce e controlli sulla luce", () => {
+  const m = humModel(humInfo({ light_entity: "light.bagno" }, { phase: "light", wait_s: 420, until: "timer_luce" }), hs("50", "on"));
+  assert.equal(m.statusLine, "Acceso con la luce");
+  assert.match(m.waitText, /tra 7 min decide l'umidità: si spegne se è sotto 60 %/);
+  assert.equal(humError(humInfo({ light_entity: "light.bagno" })), null);
+  assert.match(humError(humInfo({ light_entity: "switch.ventilatore" }))!, /diversi/);
+  assert.match(humError(humInfo({ light_entity: "sensor.luce" }))!, /luce del bagno/);
+  assert.match(humError(humInfo({ light_entity: "light.bagno", hum: { ...HUM_CFG, light_max: 0 } }))!, /almeno 1 minuto/);
+});

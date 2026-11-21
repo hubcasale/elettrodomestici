@@ -1,6 +1,6 @@
 # Elettrodomestici
 
-Integrazione per Home Assistant (HACS) e scheda Lovelace per **lavatrice, lavastoviglie, asciugatrice, forno, frigorifero, microonde** e per il **robot aspirapolvere**.
+Integrazione per Home Assistant (HACS) e scheda Lovelace per **lavatrice, lavastoviglie, asciugatrice, forno, frigorifero, microonde** per il **robot aspirapolvere** e per l'**umidostato** del bagno (accende e spegne un ventilatore in base all'umidità).
 L'elettrodomestico non va acceso né spento da Home Assistant: la presa intelligente serve **solo a misurare la potenza**.
 
 ## Come funziona
@@ -67,6 +67,24 @@ batteria, stanza e area della pulizia in corso, e pulsanti rapidi (Avvia/Pausa, 
 
 Le entità del robot (batteria, selezioni, consumabili, base) si trovano da sole dal suo dispositivo: oggi sono riconosciute quelle dell'integrazione
 [Dreame](https://github.com/Tasshack/dreame-vacuum); con un'altra marca restano comunque i comandi base e lo stato.
+
+## Umidostato
+
+Un umidostato comanda un ventilatore (un `switch`, un `fan`, una `light` o un `input_boolean`) leggendo un sensore di umidità. Si aggiunge dalle preferenze della scheda, scegliendo "Umidostato", il sensore e il ventilatore; non servono presa né statistiche.
+
+| Impostazione | Predefinito | Che cosa fa |
+|---|---|---|
+| Accende sopra | 70 % | Soglia di accensione. |
+| Conferma accensione dopo | 2 min | L'umidità deve restare sopra la soglia per tutto questo tempo: ignora i picchi brevi. |
+| Spegne sotto | 60 % | Soglia di spegnimento, sempre più bassa di quella di accensione (isteresi). |
+| Conferma spegnimento dopo | 3 min | L'umidità deve restare sotto la soglia per tutto questo tempo. |
+| Acceso almeno | 5 min | Non si spegne prima, anche se l'umidità scende subito. |
+| Si spegne comunque dopo | 60 min | Limite di sicurezza (0 = nessuno). Dopo, riparte solo quando l'umidità scende sotto la soglia di accensione e risale. |
+| Resta spento almeno | 0 min | Attesa prima di una nuova accensione. |
+| Luce del bagno (facoltativa) | – | Accendendola, il ventilatore parte anche se l'umidità è bassa. |
+| Con la luce, acceso al massimo | 10 min | Alla scadenza, se l'umidità è ancora sopra la soglia di spegnimento decide la regola dell'umidità; altrimenti si spegne. |
+
+La regolazione automatica si attiva e disattiva dalla scheda (pulsante "Automatico") o dalle preferenze; il ventilatore si accende e spegne anche a mano dalla scheda. Se il ventilatore viene acceso a mano, si spegne con le stesse regole. Ogni comando genera l'evento `elettrodomestici_umidostato` (`id`, `name`, `action`, `reason`, `humidity`).
 
 ## Entità, eventi, notifiche
 
