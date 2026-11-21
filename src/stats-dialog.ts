@@ -152,7 +152,6 @@ export class ElettroStatsDialog extends LitElement {
             ${this._error ? html`<div class="err">${this._error}</div>` : nothing}
           </div>
           <div class="foot">
-            <button class="btn" @click=${() => this._go("elettro-settings-dialog")}><ha-icon icon="mdi:cog"></ha-icon>Preferenze</button>
             <button class="btn primary" @click=${() => this._go("elettro-charts-dialog")}><ha-icon icon="mdi:chart-line"></ha-icon>Grafici</button>
           </div>
         </div>

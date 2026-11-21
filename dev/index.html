@@ -144,9 +144,20 @@ const hass = { states, services:{notify:{mobile_app_pixel:{},casa:{}}, dreame_va
   if (m.type==="elettrodomestici/stats") { const out={}; appliances.forEach((a)=>{ out[a.key]=stats; }); return out; }
   if (m.type==="history/history_during_period") return history(m.entity_ids, Date.parse(m.start_time), Date.parse(m.end_time));
   throw new Error("non gestito "+m.type); } };
+// ha-form finto (nell'editor vero c'è quello di Home Assistant): disegna i campi dello schema e manda value-changed
+if (!customElements.get("ha-form")) customElements.define("ha-form", class extends HTMLElement {
+  set data(v) { this._d = v; this._r(); } set schema(v) { this._s = v; this._r(); } set computeLabel(f) { this._l = f; } set computeHelper(f) { this._h = f; } set hass(v) {}
+  _r() { if (!this._s || !this._d) return; this.innerHTML = this._s.map((f) => { const sel = Object.keys(f.selector)[0]; const lab = this._l ? this._l(f) : f.name; const val = this._d[f.name];
+      const inp = sel === "boolean" ? `<input type="checkbox" data-n="${f.name}" ${val ? "checked" : ""}>` : sel === "number" ? `<input type="number" data-n="${f.name}" value="${val ?? ""}" style="width:70px">` : sel === "select" ? f.selector.select.options.map((o) => `<label style="margin-right:8px"><input type="checkbox" data-n="${f.name}" data-v="${o.value}" ${(val||[]).includes(o.value) ? "checked" : ""}>${o.label}</label>`).join("") : `<input type="text" data-n="${f.name}" value="${val ?? ""}" style="width:90%">`;
+      return `<div style="margin:10px 0;font:14px sans-serif"><div>${lab}</div>${inp}<div style="color:#777;font-size:12px">${this._h ? this._h(f) : ""}</div></div>`; }).join("");
+    this.querySelectorAll("input").forEach((i) => i.addEventListener("change", () => { const v = { ...this._d }; const n = i.dataset.n;
+      if (i.dataset.v) { const set = new Set(v[n] || []); i.checked ? set.add(i.dataset.v) : set.delete(i.dataset.v); v[n] = [...set]; } else v[n] = i.type === "checkbox" ? i.checked : i.type === "number" ? Number(i.value) : i.value;
+      this.dispatchEvent(new CustomEvent("value-changed", { detail: { value: v } })); })); } });
 const el = document.createElement("elettrodomestici-card");
 el.setConfig({type:"custom:elettrodomestici-card", header: params.get("header")==="0"?false:undefined, columns: params.get("columns")?Number(params.get("columns")):undefined}); el.hass = hass;
 document.getElementById("root").appendChild(el);
+if (params.get("editor") === "1") { const ed = document.createElement("elettrodomestici-card-editor"); ed.hass = hass; ed.setConfig({ type: "custom:elettrodomestici-card", title: "Elettrodomestici", columns: 3 }); ed.style.cssText = "display:block;max-width:520px;margin:16px"; ed.addEventListener("config-changed", (e) => console.log("config-changed", JSON.stringify(e.detail.config))); document.body.appendChild(ed); document.getElementById("root").style.display = "none"; }
+if (params.get("w")) document.getElementById("root").style.width = params.get("w") + "px";
 const op = params.get("open");
 if (op) setTimeout(async ()=>{ await el._open(op, params.get("key")||""); if (params.get("tab")==="consumi") { const d=document.querySelector("elettro-charts-dialog"); d._setTab("consumi"); } if (params.get("import")) { const d=document.querySelector("elettro-settings-dialog"); d._advanced="imp-"+params.get("key"); d._setImp(params.get("key"),{energy:"sensor.presa_lavatrice_energia"}); if (params.get("import")==="run") await d._import(d._list.find(a=>a.id===params.get("key"))); } if (params.get("addtype")) { const d=document.querySelector("elettro-settings-dialog"); d._addType=params.get("addtype"); } }, 600);
 </script></body></html>

@@ -29,11 +29,10 @@ const ADVANCED: { key: NumKey; label: string; unit: string; hint: string }[] = [
   { key: "heat_w", label: "Riscaldamento sopra", unit: "W", hint: "Potenza della resistenza: serve a distinguere le fasi (lavaggio, risciacquo, asciugatura)." },
 ];
 
-/** Preferenze: elenco degli elettrodomestici con sensori, soglie e avvisi; aggiunta guidata dal tipo; prezzo dell'energia e notifiche. */
-export class ElettroSettingsDialog extends LitElement {
+/** Preferenze degli elettrodomestici dentro l'editor della scheda: elenco con sensori, soglie e avvisi; aggiunta guidata dal tipo; prezzo dell'energia e notifiche. */
+export class ElettroPrefsPanel extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @property({ attribute: false }) info!: ElettroInfo;
-  @property() openKey = "";
   @state() private _list: ApplianceCfg[] = [];
   @state() private _price = "0.30";
   @state() private _priceEntity = "";
@@ -49,13 +48,14 @@ export class ElettroSettingsDialog extends LitElement {
   @state() private _imp: Record<string, { energy: string; counter: string; status: string; days: string; price: string; busy: boolean; msg: string; err: boolean }> = {};
   @state() private _busy = false;
   @state() private _error = "";
-  private _onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") this._close();
-  };
+  @state() private _okMsg = "";
 
-  connectedCallback(): void {
-    super.connectedCallback();
-    window.addEventListener("keydown", this._onKey);
+  protected willUpdate(changed: Map<string, unknown>): void {
+    if (changed.has("info") && this.info) this._init();
+  }
+
+  /** Riparte dalle preferenze salvate (all'apertura, dopo un salvataggio o con "Annulla"). */
+  private _init(): void {
     this._list = [...this.info.appliances, ...(this.info.robots ?? []), ...(this.info.humidistats ?? [])].map((a) => ({
       id: a.id, type: a.type, name: a.name, entity: a.entity, energy_entity: a.energy_entity, start_w: a.start_w, stop_w: a.stop_w,
       start_delay: a.start_delay, end_delay: a.end_delay, min_cycle: a.min_cycle, heat_w: a.heat_w, maint_cycles: a.maint_cycles,
@@ -65,16 +65,9 @@ export class ElettroSettingsDialog extends LitElement {
     this._price = String(this.info.price_kwh);
     this._priceEntity = this.info.price_entity;
     this._notify = [...this.info.notify_services];
-    this._open = this.openKey;
+    this._error = "";
+    this._okMsg = "";
     if (this._list.length === 0) this._addType = "lavatrice";
-  }
-  disconnectedCallback(): void {
-    super.disconnectedCallback();
-    window.removeEventListener("keydown", this._onKey);
-  }
-  private _close(): void {
-    this.dispatchEvent(new CustomEvent("closed"));
-    this.remove();
   }
 
   private _patch(id: string, p: Partial<ApplianceCfg>): void {
@@ -158,8 +151,8 @@ export class ElettroSettingsDialog extends LitElement {
         type: "elettrodomestici/update", entry_id: this.info.entry_id, appliances: this._list, price_kwh: price,
         price_entity: this._priceEntity.trim(), notify_services: this._notify,
       });
+      this._okMsg = "Preferenze salvate.";
       this.dispatchEvent(new CustomEvent("saved"));
-      this._close();
     } catch (e) {
       const m = e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e);
       this._error = `Impossibile salvare: ${m}`;
@@ -397,11 +390,8 @@ export class ElettroSettingsDialog extends LitElement {
     const used = this._list.map((a) => a.entity);
     const def = this._addType ? this.info.types[this._addType] : null;
     return html`
-      <div class="backdrop" @click=${(e: Event) => e.target === e.currentTarget && this._close()}>
-        <div class="panel" role="dialog" aria-modal="true" aria-label="Preferenze elettrodomestici">
-          <div class="head"><div class="title">Preferenze degli elettrodomestici</div><button class="x" aria-label="Chiudi" @click=${() => this._close()}>✕</button></div>
           <div class="body">
-            <div class="sec">Elettrodomestici</div>
+            <div class="sec first">Elettrodomestici</div>
             ${this._list.length === 0 ? html`<div class="empty">Nessun elettrodomestico: aggiungine uno qui sotto.</div>` : nothing}
             ${this._list.map(
               (a) => html`
@@ -471,18 +461,21 @@ export class ElettroSettingsDialog extends LitElement {
 
             ${err ? html`<div class="err">${err}</div>` : nothing}
             ${this._error ? html`<div class="err">${this._error}</div>` : nothing}
+            ${this._okMsg ? html`<div class="ok">${this._okMsg}</div>` : nothing}
           </div>
           <div class="foot">
-            <button class="btn" @click=${() => this._close()}>Annulla</button>
-            <button class="btn primary" ?disabled=${this._busy || !!err} @click=${() => void this._save()}>Salva</button>
-          </div>
-        </div>
-      </div>`;
+            <button class="btn" @click=${() => this._init()}>Annulla le modifiche</button>
+            <button class="btn primary" ?disabled=${this._busy || !!err} @click=${() => void this._save()}>Salva preferenze</button>
+          </div>`;
   }
 
   static styles = [
     dialogStyles,
     css`
+      :host { position: static; inset: auto; z-index: auto; display: block; }
+      .body { overflow: visible; padding: 0; }
+      .foot { position: sticky; bottom: 0; background: var(--card-background-color, #fff); padding: 10px 0; margin-top: 12px; }
+      .sec.first { margin-top: 4px; }
       .sec { font-weight: 600; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--secondary-text-color, #727272); margin: 16px 0 6px; }
       .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
       .t { flex: 1; min-width: 0; } .lab { font-size: 0.95rem; }
@@ -525,4 +518,4 @@ export class ElettroSettingsDialog extends LitElement {
   ];
 }
 
-if (!customElements.get("elettro-settings-dialog")) customElements.define("elettro-settings-dialog", ElettroSettingsDialog);
+if (!customElements.get("elettro-prefs-panel")) customElements.define("elettro-prefs-panel", ElettroPrefsPanel);

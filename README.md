@@ -26,7 +26,7 @@ Il frigorifero conta i cicli del compressore, il forno avvisa se resta acceso a 
   manutenzione (es. "pulizia filtro ogni 10 cicli"), come viene riconosciuto.
 * Pulsante **Grafici**: potenza della presa con le soglie e le fasce dello stato (dal recorder), e consumi giorno per giorno
   (energia, costo, cicli, ore; 7/30/90 giorni). I consumi giornalieri sono salvati dall'integrazione: restano anche con un recorder corto.
-* Ingranaggio → **Preferenze**: si aggiunge un elettrodomestico scegliendo il **tipo** (soglie e fasce si adattano da sole) e il sensore di potenza.
+* **Configurazione della scheda** (Modifica scheda): titolo, colonne e quali elettrodomestici mostrare, e sotto le **preferenze**: si aggiunge un elettrodomestico scegliendo il **tipo** (soglie e fasce si adattano da sole) e il sensore di potenza; prezzo dell'energia e notifiche. Le preferenze restano salvate nell'integrazione (valgono per tutte le schede e il motore lavora anche a dashboard chiusa) e si salvano col pulsante «Salva preferenze».
 
 ```yaml
 type: custom:elettrodomestici-card
@@ -34,22 +34,29 @@ type: custom:elettrodomestici-card
 title: Elettrodomestici
 columns: 2                       # colonne delle tessere (1-8); 0 o assente = automatico
 appliances: [lavatrice, forno]   # solo questi (id); senza l'elenco si vedono tutti
-header: false                    # senza titolo e ingranaggio
+header: false                    # senza titolo e riepilogo (per inserire la scheda dentro un'altra)
+grid_options: { rows: 4 }        # vista a sezioni: righe e colonne si regolano dalla scheda «Layout» (qui un esempio)
 ```
+
+**Griglia e comportamento nella dashboard**
+
+* `columns` è il **massimo** di colonne: se la scheda è stretta (una sezione piccola, il telefono) si riducono da sole, così le tessere non diventano mai più strette di circa 260 px.
+* Vista **a sezioni**: la scheda occupa per default tutta la larghezza della sezione (12 colonne) e l'altezza che serve (`rows: auto`); con un numero fisso di righe il contenuto scorre dentro la scheda. Dimensioni minime 3 colonne × 2 righe; si cambiano dal pannello «Layout» o con `grid_options`.
+* Vista **masonry**: l'altezza si stima da quante tessere ci sono e da quante colonne ci stanno.
 
 ## Installazione
 
 1. HACS → Integrazioni → menu ⋮ → *Repository personalizzati* → `https://github.com/hubcasale/elettrodomestici` (Integrazione).
 2. Scarica, riavvia Home Assistant.
 3. Impostazioni → Dispositivi e servizi → *Aggiungi integrazione* → **Elettrodomestici**.
-4. Aggiungi la scheda alla dashboard (viene caricata dall'integrazione, nessuna risorsa da registrare) e, dall'ingranaggio, i tuoi elettrodomestici.
+4. Aggiungi la scheda alla dashboard (viene caricata dall'integrazione, nessuna risorsa da registrare) e, dalla sua configurazione, i tuoi elettrodomestici.
    Su Fully Kiosk svuota la cache dopo ogni aggiornamento.
 
 Ogni presa deve avere un sensore di **potenza** (W o kW). Se ha anche un contatore di **energia** (kWh) indicalo: i consumi saranno più precisi;
 altrimenti l'energia si ricava dalla potenza.
 
 ### Integrazione del costruttore (Electrolux)
-Nelle Preferenze dell'elettrodomestico c'è la spunta **Usa l'integrazione del costruttore**: si sceglie il dispositivo dell'integrazione
+Nelle preferenze dell'elettrodomestico (configurazione della scheda) c'è la spunta **Usa l'integrazione del costruttore**: si sceglie il dispositivo dell'integrazione
 [Electrolux](https://github.com/TTLucian/ha-electrolux) già presente in Home Assistant. Da lì arrivano **stato, fase, programma, sportello e tempo
 rimanente** (la barra di avanzamento si calcola sul tempo che resta), mentre **consumi, costi e cicli restano quelli della presa**.
 Gli apparecchi Electrolux si scollegano dal cloud quando sono spenti: in quel caso i loro sensori sono "sconosciuti" e la tessera
@@ -57,7 +64,7 @@ mostra una riga "apparecchio spento o non collegato", continuando a funzionare c
 Per altre entità (programma di un'altra marca, ecc.) restano i *dispositivi collegati*.
 
 ## Robot aspirapolvere
-Dalle Preferenze si aggiunge **Aspirapolvere** scegliendo l'entità `vacuum.…` del robot (non serve nessuna presa). Sulla scheda compare con stato,
+Dalle preferenze (configurazione della scheda) si aggiunge **Aspirapolvere** scegliendo l'entità `vacuum.…` del robot (non serve nessuna presa). Sulla scheda compare con stato,
 batteria, stanza e area della pulizia in corso, e pulsanti rapidi (Avvia/Pausa, Base). Toccandolo si apre la **gestione completa**, a schede:
 
 * **Pulisci**: stato e batteria, poi scegli cosa pulire (**Tutta la casa**, una stanza o più stanze), le passate (1-3) e premi il pulsante di avvio, che dice cosa farà ("Pulisci Cucina e Camera · 2 passate"). Mentre lavora compaiono Pausa/Riprendi, Stop e Alla base; ci sono anche Trovalo, le scorciatoie, un riassunto di "Come pulisce" (modalità, aspirazione, panno) e la mappa.
@@ -70,7 +77,7 @@ Le entità del robot (batteria, selezioni, consumabili, base) si trovano da sole
 
 ## Umidostato
 
-Un umidostato comanda un ventilatore (un `switch`, un `fan`, una `light` o un `input_boolean`) leggendo un sensore di umidità. Si aggiunge dalle preferenze della scheda, scegliendo "Umidostato", il sensore e il ventilatore; non servono presa né statistiche.
+Un umidostato comanda un ventilatore (un `switch`, un `fan`, una `light` o un `input_boolean`) leggendo un sensore di umidità. Si aggiunge dalla configurazione della scheda, scegliendo "Umidostato", il sensore e il ventilatore; non servono presa né statistiche.
 
 | Impostazione | Predefinito | Che cosa fa |
 |---|---|---|
@@ -87,7 +94,7 @@ Un umidostato comanda un ventilatore (un `switch`, un `fan`, una `light` o un `i
 
 Il pulsante **Grafici** della tessera mostra l'umidità con le soglie, la temperatura (se scelta) e le fasce in cui ventilatore e luce erano accesi (6 ore, 24 ore, 3 o 7 giorni).
 
-La regolazione automatica si attiva e disattiva dalla scheda (pulsante "Automatico") o dalle preferenze; il ventilatore si accende e spegne anche a mano dalla scheda. Se il ventilatore viene acceso a mano, si spegne con le stesse regole. Ogni comando genera l'evento `elettrodomestici_umidostato` (`id`, `name`, `action`, `reason`, `humidity`).
+La regolazione automatica si attiva e disattiva dalla scheda (pulsante "Auto") o dalla configurazione della scheda; il ventilatore si accende e spegne anche a mano dalla scheda. Se il ventilatore viene acceso a mano, si spegne con le stesse regole. Ogni comando genera l'evento `elettrodomestici_umidostato` (`id`, `name`, `action`, `reason`, `humidity`).
 
 ## Entità, eventi, notifiche
 
@@ -96,7 +103,7 @@ Per ogni elettrodomestico: sensore **Stato** (attributi: fase, inizio, energia d
 
 * Evento `elettrodomestici_ciclo_terminato` (id, name, type, duration_minutes, energy_kwh, cost_eur) a ogni ciclo concluso.
 * Evento `elettrodomestici_avviso` se un elettrodomestico resta in funzione oltre il tempo impostato (forno dimenticato).
-* Notifiche: nelle Preferenze scegli i servizi `notify.*`; l'avviso di fine ciclo arriva anche senza automazioni.
+* Notifiche: nella configurazione della scheda scegli i servizi `notify.*`; l'avviso di fine ciclo arriva anche senza automazioni.
 * Prezzo: €/kWh fisso o un sensore con il prezzo attuale.
 
 ## Sviluppo

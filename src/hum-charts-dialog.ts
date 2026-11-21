@@ -89,10 +89,6 @@ export class ElettroHumChartsDialog extends LitElement {
     this.dispatchEvent(new CustomEvent("closed"));
     this.remove();
   }
-  private _openPrefs(): void {
-    this.dispatchEvent(new CustomEvent("open-dialog", { detail: { tag: "elettro-settings-dialog", key: this.openKey } }));
-    this._close();
-  }
 
   private async _load(): Promise<void> {
     const app = this._app;
@@ -235,9 +231,6 @@ export class ElettroHumChartsDialog extends LitElement {
                 </div>`
               : nothing}
             ${this._error ? html`<div class="err">${this._error}</div>` : nothing}
-          </div>
-          <div class="foot">
-            <button class="btn" @click=${() => this._openPrefs()}><ha-icon icon="mdi:tune-variant"></ha-icon>Soglie</button>
           </div>
         </div>
       </div>`;

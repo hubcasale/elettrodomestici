@@ -2,8 +2,8 @@ import { LitElement, html, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { applianceSvg } from "./appliance-svg";
-import { fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, humModel, robotModel, summaryText, tileModel, type HumModel, type RobotModel, type TileModel } from "./card-logic";
-import "./settings-dialog";
+import { cardSizeFor, effectiveColumns, fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, humModel, robotModel, summaryText, tileModel, type HumModel, type RobotModel, type TileModel } from "./card-logic";
+import "./card-editor";
 import "./stats-dialog";
 import "./charts-dialog";
 import "./robot-dialog";
@@ -22,7 +22,7 @@ interface CardConfig {
   header?: boolean;
 }
 
-type DialogTag = "elettro-settings-dialog" | "elettro-stats-dialog" | "elettro-charts-dialog" | "elettro-robot-dialog" | "elettro-hum-charts-dialog";
+type DialogTag = "elettro-stats-dialog" | "elettro-charts-dialog" | "elettro-robot-dialog" | "elettro-hum-charts-dialog";
 
 /** Scheda degli elettrodomestici: una tessera per ognuno con immagine, stato, potenza e consumi; tocco = statistiche, pulsante = grafici. */
 export class ElettrodomesticiCard extends LitElement {
@@ -31,6 +31,8 @@ export class ElettrodomesticiCard extends LitElement {
   @state() private _info: ElettroInfo | null = null;
   @state() private _error = "";
   @state() private _now = Date.now();
+  @state() private _width = 0;
+  private _ro?: ResizeObserver;
   private _loadedAt = 0;
   private _loading = false;
   private _tick?: number;
@@ -41,25 +43,30 @@ export class ElettrodomesticiCard extends LitElement {
     this._info = null;
     this._loadedAt = 0;
   }
+  /** Altezza per la vista masonry (unità di 50 px): dipende da quante tessere ci sono e da quante colonne ci stanno. */
   getCardSize(): number {
-    return 4;
+    const n = this._visibleCount();
+    const cols = effectiveColumns(this._width, this._config.columns) ?? Math.max(1, Math.floor((this._width + 12) / 312));
+    return cardSizeFor(n, cols, this._config.header !== false);
   }
-  getGridOptions(): Record<string, number> {
-    return { columns: 12, min_columns: 4 };
+  /** Dimensioni per la vista a sezioni (il pannello «Layout» di Home Assistant parte da queste): larga quanto la sezione, alta quanto serve. */
+  getGridOptions(): Record<string, number | string> {
+    return { columns: 12, rows: "auto", min_columns: 3, min_rows: 2 };
   }
   static getStubConfig(): CardConfig {
     return { type: "custom:elettrodomestici-card" };
   }
+  /** Editor della scheda: opzioni di visualizzazione e preferenze degli elettrodomestici (vedi card-editor.ts). */
+  static getConfigElement(): HTMLElement {
+    return document.createElement("elettrodomestici-card-editor");
+  }
 
-  /** Editor visuale della scheda (titolo e colonne). */
-  static getConfigForm() {
-    return {
-      schema: [
-        { name: "title", selector: { text: {} } },
-        { name: "columns", selector: { number: { min: 0, max: 8, step: 1, mode: "box" } } },
-      ],
-      computeLabel: (s: { name: string }) => (s.name === "title" ? "Titolo" : s.name === "columns" ? "Colonne (0 = automatico)" : s.name),
-    };
+  private _visibleCount(): number {
+    const i = this._info;
+    if (!i) return 1;
+    const wanted = Array.isArray(this._config.appliances) ? this._config.appliances : null;
+    const all = [...i.appliances, ...(i.robots ?? []), ...(i.humidistats ?? [])];
+    return Math.max(1, wanted ? all.filter((a) => wanted.includes(a.key)).length : all.length);
   }
 
   connectedCallback(): void {
@@ -69,6 +76,16 @@ export class ElettrodomesticiCard extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     if (this._tick) window.clearInterval(this._tick);
+    this._ro?.disconnect();
+    this._ro = undefined;
+  }
+  /** Misura la larghezza della scheda (non della finestra): in una sezione stretta le colonne scelte si riducono da sole. */
+  protected firstUpdated(): void {
+    this._ro = new ResizeObserver((entries) => {
+      const w = Math.floor(entries[0]?.contentRect.width ?? 0);
+      if (w > 0 && Math.abs(w - this._width) > 1) this._width = w;
+    });
+    this._ro.observe(this);
   }
 
   protected willUpdate(): void {
@@ -144,7 +161,7 @@ export class ElettrodomesticiCard extends LitElement {
   private _humTile(h: HumInfo, m: HumModel) {
     return html`
       <div class="tile ${m.tone}">
-        <button class="main" aria-label=${`Preferenze di ${m.name}`} @click=${() => void this._open("elettro-settings-dialog", h.key)}>
+        <button class="main" aria-label=${`Grafici di ${m.name}`} @click=${() => void this._open("elettro-hum-charts-dialog", h.key)}>
           <span class="img">${unsafeSVG(applianceSvg("umidostato", m.state))}</span>
           <span class="info">
             <span class="n">${m.name}</span>
@@ -158,7 +175,6 @@ export class ElettrodomesticiCard extends LitElement {
           ${m.fanOn === null ? nothing : html`<button class=${m.fanOn ? "a" : "a ok"} @click=${() => this._humCall(h, !m.fanOn)}><ha-icon icon=${m.fanOn ? "mdi:fan-off" : "mdi:fan"}></ha-icon>${m.fanOn ? "Spegni" : "Accendi"}</button>`}
           <button class=${m.auto ? "a ok" : "a"} role="switch" aria-checked=${m.auto ? "true" : "false"} @click=${() => this._humAuto(h, !m.auto)}><ha-icon icon="mdi:auto-fix"></ha-icon>Auto ${m.auto ? "sì" : "no"}</button>
           <button class="a" aria-label=${`Grafici di ${m.name}`} @click=${() => void this._open("elettro-hum-charts-dialog", h.key)}><ha-icon icon="mdi:chart-line"></ha-icon>Grafici</button>
-          <button class="a" aria-label=${`Soglie di ${m.name}`} @click=${() => void this._open("elettro-settings-dialog", h.key)}><ha-icon icon="mdi:tune-variant"></ha-icon>Soglie</button>
         </div>
       </div>`;
   }
@@ -224,7 +240,7 @@ export class ElettrodomesticiCard extends LitElement {
     const robots = (this._info.robots ?? []).filter((r) => !wanted || wanted.includes(r.key));
     const hums = (this._info.humidistats ?? []).filter((r) => !wanted || wanted.includes(r.key));
     const elapsed = (this._now - this._loadedAt) / 1000;
-    const grid = html`<div class="grid" style=${`grid-template-columns:${gridTemplate(this._config.columns)}`}>${tiles.map((t) => this._tile(t))}${robots.map((r) => this._robotTile(r, robotModel(r, this.hass)))}${hums.map((h) => this._humTile(h, humModel(h, this.hass, elapsed)))}</div>`;
+    const grid = html`<div class="grid" style=${`grid-template-columns:${gridTemplate(this._config.columns, this._width)}`}>${tiles.map((t) => this._tile(t))}${robots.map((r) => this._robotTile(r, robotModel(r, this.hass)))}${hums.map((h) => this._humTile(h, humModel(h, this.hass, elapsed)))}</div>`;
     if (this._config.header === false) return html`<ha-card><div class="pad compact">${grid}</div></ha-card>`;
     return html`
       <ha-card>
@@ -234,18 +250,18 @@ export class ElettrodomesticiCard extends LitElement {
               <div class="title">${title}</div>
               <div class="sum">${summaryText(tiles)}</div>
             </div>
-            <button class="ib" aria-label="Preferenze" @click=${() => void this._open("elettro-settings-dialog")}><ha-icon icon="mdi:cog"></ha-icon></button>
           </div>
           ${tiles.length + robots.length + hums.length === 0
-            ? html`<button class="empty" @click=${() => void this._open("elettro-settings-dialog")}><ha-icon icon="mdi:plus-circle-outline"></ha-icon>Aggiungi il primo elettrodomestico</button>`
+            ? html`<div class="empty"><ha-icon icon="mdi:cog-outline"></ha-icon>Nessun elettrodomestico: apri «Modifica scheda» e aggiungi il primo.</div>`
             : grid}
         </div>
       </ha-card>`;
   }
 
   static styles = css`
-    :host { display: block; color: var(--primary-text-color, #212121); }
-    ha-card { overflow: hidden; }
+    :host { display: block; height: 100%; color: var(--primary-text-color, #212121); }
+    ha-card { overflow: hidden; height: 100%; box-sizing: border-box; }
+    .pad { height: 100%; box-sizing: border-box; overflow: auto; }
     .pad { padding: 14px 16px 16px; }
     .pad.compact { padding: 8px; }
     .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
@@ -255,7 +271,7 @@ export class ElettrodomesticiCard extends LitElement {
     .errbox { margin-top: 8px; padding: 10px; border-radius: 10px; background: rgba(220, 38, 38, 0.1); color: #b91c1c; font-size: 0.9rem; }
     .ib { flex: none; width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--divider-color, #ccc); background: var(--secondary-background-color, #f4f4f4); color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     ha-icon { --mdc-icon-size: 20px; }
-    .empty { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 64px; justify-content: center; border: 2px dashed var(--divider-color, #ccc); border-radius: 14px; background: transparent; color: var(--secondary-text-color, #727272); cursor: pointer; font-size: 0.95rem; }
+    .empty { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 64px; justify-content: center; text-align: center; border: 2px dashed var(--divider-color, #ccc); border-radius: 14px; color: var(--secondary-text-color, #727272); font-size: 0.95rem; padding: 8px; box-sizing: border-box; }
     .grid { display: grid; gap: 12px; align-items: start; }
     .tile { padding: 10px 12px 12px; border-radius: 16px; background: var(--secondary-background-color, #f2f2f2); border: 1px solid transparent; }
     .tile.run { border-color: rgba(245, 158, 11, 0.7); background: rgba(245, 158, 11, 0.1); }
@@ -303,4 +319,4 @@ window.customCards.push({
 });
 
 // eslint-disable-next-line no-console
-console.info("%c ELETTRODOMESTICI %c v0.5.1 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
+console.info("%c ELETTRODOMESTICI %c v0.6.0 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");

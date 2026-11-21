@@ -371,3 +371,25 @@ test("umidostato: acceso con la luce e controlli sulla luce", () => {
   assert.match(humError(humInfo({ light_entity: "sensor.luce" }))!, /luce del bagno/);
   assert.match(humError(humInfo({ light_entity: "light.bagno", hum: { ...HUM_CFG, light_max: 0 } }))!, /almeno 1 minuto/);
 });
+
+// ---- griglia e dimensioni nella dashboard
+import { cardSizeFor, effectiveColumns, gridTemplate as gridTpl } from "../src/card-logic";
+
+test("colonne: scelte come massimo, ridotte se la scheda è stretta", () => {
+  assert.equal(effectiveColumns(1200, 4), 4);
+  assert.equal(effectiveColumns(560, 4), 2);                 // 560 px = due tessere da 260
+  assert.equal(effectiveColumns(300, 4), 1);
+  assert.equal(effectiveColumns(0, 3), 3);                   // larghezza non ancora misurata: vale la scelta
+  assert.equal(effectiveColumns(900, 0), null);              // 0 = automatico
+  assert.equal(effectiveColumns(900, "x"), null);
+  assert.equal(effectiveColumns(2000, 20), 7);               // massimo 8 colonne, e 2000 px ne ospitano 7
+});
+
+test("griglia CSS e altezza stimata per la vista masonry", () => {
+  assert.equal(gridTpl(3, 1000), "repeat(3, minmax(0, 1fr))");
+  assert.equal(gridTpl(3, 420), "repeat(1, minmax(0, 1fr))");
+  assert.match(gridTpl(0, 1000), /auto-fill/);
+  assert.equal(cardSizeFor(6, 3, true), 7);                  // intestazione + 2 righe di tessere
+  assert.equal(cardSizeFor(1, 3, false), 3);
+  assert.equal(cardSizeFor(0, 0, true), 4);                  // senza elementi comunque una riga
+});

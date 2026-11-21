@@ -320,13 +320,26 @@ export function gridColumns(value: unknown): number | null {
   const n = Math.round(Number(value));
   return Number.isFinite(n) && n >= 1 ? Math.min(n, 8) : null;
 }
-export function gridTemplate(value: unknown): string {
-  const n = gridColumns(value);
+export const TILE_MIN_WIDTH = 260;   // larghezza minima di una tessera: sotto, le colonne scelte si riducono da sole
+export function gridTemplate(value: unknown, width = 0): string {
+  const n = effectiveColumns(width, value);
   return n === null ? "repeat(auto-fill, minmax(min(300px, 100%), 1fr))" : `repeat(${n}, minmax(0, 1fr))`;
+}
+/** Colonne da usare: quelle scelte (massimo), ridotte se la scheda è stretta; null = automatico. `width` 0 = non ancora misurata. */
+export function effectiveColumns(width: number, requested: unknown): number | null {
+  const n = gridColumns(requested);
+  if (n === null) return null;
+  if (!(width > 0)) return n;
+  return Math.max(1, Math.min(n, Math.floor((width + 12) / (TILE_MIN_WIDTH + 12))));
+}
+/** Altezza stimata (in unità di riga di Home Assistant) per la vista masonry: titolo e una riga di tessere ogni ~3 unità. */
+export function cardSizeFor(tiles: number, columns: number, header: boolean): number {
+  const cols = Math.max(1, columns);
+  return (header ? 1 : 0) + Math.max(1, Math.ceil(tiles / cols)) * 3;
 }
 
 export function summaryText(tiles: TileModel[]): string {
-  if (tiles.length === 0) return "Nessun elettrodomestico: aggiungine uno dalle preferenze.";
+  if (tiles.length === 0) return "Nessun elettrodomestico: aggiungine uno dalla configurazione della scheda.";
   const running = tiles.filter((t) => t.state === "in_funzione");
   const done = tiles.filter((t) => t.state === "terminato");
   const watts = tiles.reduce((s, t) => s + (t.power ?? 0), 0);
