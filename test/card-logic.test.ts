@@ -393,3 +393,17 @@ test("griglia CSS e altezza stimata per la vista masonry", () => {
   assert.equal(cardSizeFor(1, 3, false), 3);
   assert.equal(cardSizeFor(0, 0, true), 4);                  // senza elementi comunque una riga
 });
+
+test("grafico umidostato: il valore resta valido finche' non cambia o il sensore non e' disponibile", () => {
+  const H = 3600 * 1000;
+  const B = 1_790_000_000_000;
+  const raw = [{ s: "80", lu: B }, { s: "unavailable", lu: B + 5 * H }, { s: "70", lu: B + 7 * H }];
+  const pts = parseNumeric(raw as never, true);
+  assert.equal(pts.length, 3);
+  assert.equal(pts[1].off, true);
+  const out = resample(pts, B, B + 10 * H, 10, Number.POSITIVE_INFINITY);
+  assert.deepEqual(out.map((v) => (v === null ? null : Math.round(v))), [80, 80, 80, 80, 80, null, null, 70, 70, 70]);
+  // con il limite di 30 minuti di prima il valore dopo mezz'ora spariva
+  const old = resample(parseNumeric(raw as never), B, B + 10 * H, 10, 30 * 60000);
+  assert.equal(old[3], null);
+});

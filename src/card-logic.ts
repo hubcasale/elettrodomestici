@@ -500,6 +500,8 @@ function rawTime(r: RawState): number | null {
 export interface Pt {
   t: number;
   v: number;
+  /** Da questo istante il sensore non ha valore (non disponibile / sconosciuto): chiude il tratto precedente. Solo con `parseNumeric(..., true)`. */
+  off?: boolean;
 }
 export interface Seg {
   from: number;
@@ -507,12 +509,16 @@ export interface Seg {
   state: MachineState;
 }
 
-export function parseNumeric(raw: RawState[] | undefined): Pt[] {
+export function parseNumeric(raw: RawState[] | undefined, keepGaps = false): Pt[] {
   const out: Pt[] = [];
   for (const r of raw ?? []) {
     const t = rawTime(r);
     const s = r.s ?? r.state;
-    if (t === null || s === undefined || s === "" || s === "unavailable" || s === "unknown") continue;
+    if (t === null || s === undefined) continue;
+    if (s === "" || s === "unavailable" || s === "unknown") {
+      if (keepGaps) out.push({ t, v: 0, off: true });
+      continue;
+    }
     const v = Number(s);
     if (Number.isFinite(v)) out.push({ t, v });
   }
@@ -568,7 +574,7 @@ export function resample(pts: Pt[], t0: number, t1: number, n: number, maxGap = 
     const a = t0 + i * dt;
     const b = a + dt;
     while (idx < pts.length && pts[idx].t <= a) {
-      curV = pts[idx].v;
+      curV = pts[idx].off ? null : pts[idx].v;
       curT = pts[idx].t;
       idx++;
     }
@@ -589,7 +595,7 @@ export function resample(pts: Pt[], t0: number, t1: number, n: number, maxGap = 
     while (k < pts.length && pts[k].t < b) {
       add(pts[k].t);
       segStart = pts[k].t;
-      v = pts[k].v;
+      v = pts[k].off ? null : pts[k].v;
       vT = pts[k].t;
       k++;
     }

@@ -107,8 +107,8 @@ export class ElettroHumChartsDialog extends LitElement {
       if (seq !== this._seq) return;
       this._t0 = t0;
       this._t1 = t1;
-      this._rawHum = parseNumeric(res[app.entity]);
-      this._rawTemp = app.temp_entity ? parseNumeric(res[app.temp_entity]) : [];
+      this._rawHum = parseNumeric(res[app.entity], true);
+      this._rawTemp = app.temp_entity ? parseNumeric(res[app.temp_entity], true) : [];
       this._rawFan = onOff(app.fan_entity ? res[app.fan_entity] : undefined);
       this._rawLight = onOff(app.light_entity ? res[app.light_entity] : undefined);
       this._recompute();
@@ -123,8 +123,10 @@ export class ElettroHumChartsDialog extends LitElement {
   private _recompute(): void {
     if (!this._t1) return;
     this._n = Math.max(60, Math.min(480, Math.floor((this._w - ML - 8) / 2)));
-    this._hum = resample(this._rawHum, this._t0, this._t1, this._n, 30 * 60000);
-    this._temp = resample(this._rawTemp, this._t0, this._t1, this._n, 30 * 60000);
+    // Questi sensori (Shelly) mandano un dato solo quando cambia di una soglia: un valore resta valido finché non arriva il successivo
+    // o finché il sensore non risulta non disponibile (altrimenti i tratti stabili diventerebbero buchi nel grafico).
+    this._hum = resample(this._rawHum, this._t0, this._t1, this._n, Number.POSITIVE_INFINITY);
+    this._temp = resample(this._rawTemp, this._t0, this._t1, this._n, Number.POSITIVE_INFINITY);
     this._fan = stateSegments(this._rawFan, this._t0, this._t1);
     this._light = stateSegments(this._rawLight, this._t0, this._t1);
   }
