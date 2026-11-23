@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import "./prefs-panel";
+import { applyCardForm, type CardFormConfig } from "./card-logic";
 import type { ElettroInfo, HomeAssistant } from "./types";
 
 interface CardConfig {
@@ -65,16 +66,8 @@ export class ElettrodomesticiCardEditor extends LitElement {
 
   private _onForm(ev: CustomEvent<{ value: Record<string, unknown> }>): void {
     ev.stopPropagation();
-    const v = ev.detail.value;
-    const next: CardConfig = { type: this._config.type };
-    if (this._config.entry_id) next.entry_id = this._config.entry_id;
-    if (typeof v.title === "string" && v.title.trim()) next.title = v.title;
-    if (v.header === false) next.header = false;
-    const cols = Math.round(Number(v.columns));
-    if (Number.isFinite(cols) && cols >= 1) next.columns = Math.min(cols, 8);
-    if (typeof v.color === "string" && v.color.trim() && v.color !== "none") next.color = v.color.trim();
-    if (Array.isArray(v.appliances) && v.appliances.length > 0) next.appliances = v.appliances.map(String);
-    this._emit(next);
+    // solo le chiavi del modulo cambiano: le altre (dimensioni del «Layout», card_mod…) restano nella configurazione
+    this._emit(applyCardForm(this._config as unknown as CardFormConfig, ev.detail.value) as unknown as CardConfig);
   }
 
   private _items(): { value: string; label: string }[] {

@@ -898,3 +898,30 @@ export function humModel(app: HumInfo, hass: Pick<HomeAssistant, "states">, elap
     tempUnit: (app.temp_entity && String(hass.states[app.temp_entity]?.attributes?.unit_of_measurement)) || "°C",
   };
 }
+
+// ---- editor della scheda ---------------------------------------------------
+
+/** La configurazione della scheda vista dall'editor: le chiavi del modulo più tutto quello che ci hanno messo altri (dimensioni di Home Assistant, card_mod…). */
+export type CardFormConfig = { type: string } & Record<string, unknown>;
+
+/**
+ * Scrive i valori del modulo dell'editor nella configurazione. Tocca solo le chiavi del modulo (titolo, intestazione,
+ * colonne, colore, elenco degli elettrodomestici): tutte le altre restano come sono, per esempio le dimensioni scelte
+ * nella scheda «Layout» (grid_options), view_layout o card_mod. Quello che vale come il comportamento normale non si scrive.
+ */
+export function applyCardForm(config: CardFormConfig, v: Record<string, unknown>): CardFormConfig {
+  const next: CardFormConfig = { ...config };
+  const put = (key: string, value: unknown, on: boolean) => {
+    if (on) next[key] = value;
+    else delete next[key];
+  };
+  put("title", v.title, typeof v.title === "string" && v.title.trim() !== "");
+  put("header", false, v.header === false);
+  const cols = Math.round(Number(v.columns));
+  put("columns", Math.min(cols, 8), Number.isFinite(cols) && cols >= 1);
+  const color = typeof v.color === "string" ? v.color.trim() : "";
+  put("color", color, color !== "" && color !== "none");
+  const list = Array.isArray(v.appliances) ? v.appliances.map(String) : [];
+  put("appliances", list, list.length > 0);
+  return next;
+}

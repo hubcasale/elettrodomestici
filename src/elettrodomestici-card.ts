@@ -330,4 +330,4 @@ window.customCards.push({
 });
 
 // eslint-disable-next-line no-console
-console.info("%c ELETTRODOMESTICI %c v0.6.2 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
+console.info("%c ELETTRODOMESTICI %c v0.6.3 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");

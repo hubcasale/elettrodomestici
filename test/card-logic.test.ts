@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   appliancesError, energySensors, extraValue, fmt, fmtEur, fmtKwh, formatDuration, formatHours, liveSnapshot, metricText, newAppliance,
-  counters, consumables, gridColumns, gridTemplate, guessOldPackage, makerView, robotModel, robotPlan, robotRooms, robotShortcuts, robotText, appliancesError, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
+  applyCardForm, counters, consumables, gridColumns, gridTemplate, guessOldPackage, makerView, robotModel, robotPlan, robotRooms, robotShortcuts, robotText, appliancesError, notifyServices, parseNumeric, powerSensors, readPower, resample, slug, stateSegments, summaryText, sumSeries, tileModel,
 } from "../src/card-logic";
 import { applianceSvg } from "../src/appliance-svg";
 import type { ApplianceInfo, HassState, RobotInfo, TypeDefaults } from "../src/types";
+import type { CardFormConfig } from "../src/card-logic";
 
 const DEF: TypeDefaults = {
   label: "Lavatrice", icon: "mdi:washing-machine", off_label: "Spenta", done_label: "Da svuotare", has_finished: true, notify: true,
@@ -406,4 +407,21 @@ test("grafico umidostato: il valore resta valido finche' non cambia o il sensore
   // con il limite di 30 minuti di prima il valore dopo mezz'ora spariva
   const old = resample(parseNumeric(raw as never), B, B + 10 * H, 10, 30 * 60000);
   assert.equal(old[3], null);
+});
+
+test("editor: il modulo cambia solo le sue chiavi, le altre restano (dimensioni del Layout, card_mod, entry_id)", () => {
+  const cfg: CardFormConfig = { type: "custom:elettrodomestici-card", entry_id: "abc", columns: 3, grid_options: { columns: 12, rows: 6 }, view_layout: { x: 1 }, card_mod: { style: "x" } };
+  const form = { title: "", header: true, columns: 3, color: "", appliances: [] };
+  assert.deepEqual(applyCardForm(cfg, form), cfg);
+  const next = applyCardForm(cfg, { ...form, title: "Cucina", color: "orange" });
+  assert.deepEqual(next, { ...cfg, title: "Cucina", color: "orange" });
+  assert.deepEqual(next.grid_options, { columns: 12, rows: 6 });
+});
+
+test("editor: quello che vale come il comportamento normale non si scrive", () => {
+  const base: CardFormConfig = { type: "custom:elettrodomestici-card", title: "T", header: false, columns: 4, color: "blue", appliances: ["a"] };
+  assert.deepEqual(applyCardForm(base, { title: "  ", header: true, columns: 0, color: "none", appliances: [] }), { type: "custom:elettrodomestici-card" });
+  assert.deepEqual(applyCardForm(base, { title: "T", header: false, columns: 12, color: " blue ", appliances: ["a", 2] }), { type: "custom:elettrodomestici-card", title: "T", header: false, columns: 8, color: "blue", appliances: ["a", "2"] });
+  // il selettore del colore, svuotato, non manda la chiave
+  assert.equal("color" in applyCardForm(base, { title: "T", header: false, columns: 4, appliances: ["a"] }), false);
 });
