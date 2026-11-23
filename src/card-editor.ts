@@ -10,6 +10,7 @@ interface CardConfig {
   appliances?: string[];
   columns?: number;
   header?: boolean;
+  color?: string;
 }
 
 interface FormSchema {
@@ -71,6 +72,7 @@ export class ElettrodomesticiCardEditor extends LitElement {
     if (v.header === false) next.header = false;
     const cols = Math.round(Number(v.columns));
     if (Number.isFinite(cols) && cols >= 1) next.columns = Math.min(cols, 8);
+    if (typeof v.color === "string" && v.color.trim() && v.color !== "none") next.color = v.color.trim();
     if (Array.isArray(v.appliances) && v.appliances.length > 0) next.appliances = v.appliances.map(String);
     this._emit(next);
   }
@@ -86,6 +88,7 @@ export class ElettrodomesticiCardEditor extends LitElement {
       { name: "title", selector: { text: {} } },
       { name: "header", selector: { boolean: {} } },
       { name: "columns", selector: { number: { min: 0, max: 8, step: 1, mode: "box" } } },
+      { name: "color", selector: { ui_color: { include_none: true } } },
     ];
     const items = this._items();
     if (items.length > 0) schema.push({ name: "appliances", selector: { select: { multiple: true, mode: "list", options: items } } });
@@ -94,7 +97,7 @@ export class ElettrodomesticiCardEditor extends LitElement {
 
   private static _label(s: { name: string }): string {
     return (
-      { title: "Titolo", header: "Mostra titolo e riepilogo", columns: "Colonne (0 = automatico)", appliances: "Elettrodomestici da mostrare (nessuno = tutti)" }[s.name] ?? s.name
+      { title: "Titolo", header: "Mostra titolo e riepilogo", columns: "Colonne (0 = automatico)", color: "Colore della scheda", appliances: "Elettrodomestici da mostrare (nessuno = tutti)" }[s.name] ?? s.name
     );
   }
   private static _help(s: { name: string }): string {
@@ -102,6 +105,7 @@ export class ElettrodomesticiCardEditor extends LitElement {
       {
         header: "Disattivalo per inserire la scheda dentro un'altra senza intestazione.",
         columns: "Numero massimo di colonne: si riduce da solo se la scheda è stretta (vista a sezioni o piccola).",
+        color: "Tinge lo sfondo e il bordo della scheda, come un blocco colorato della plancia; le tessere restano come sono. Nessuno lascia l'aspetto del tema.",
         appliances: "Per mostrare solo alcuni elettrodomestici in questa scheda; le dimensioni si regolano dalla scheda «Layout» di Home Assistant.",
       }[s.name] ?? ""
     );
@@ -109,7 +113,7 @@ export class ElettrodomesticiCardEditor extends LitElement {
 
   render() {
     if (!this.hass) return nothing;
-    const data = { title: this._config.title ?? "", header: this._config.header !== false, columns: this._config.columns ?? 0, appliances: this._config.appliances ?? [] };
+    const data = { title: this._config.title ?? "", header: this._config.header !== false, columns: this._config.columns ?? 0, color: this._config.color ?? "", appliances: this._config.appliances ?? [] };
     return html`
       <div class="wrap">
         <ha-form .hass=${this.hass} .data=${data} .schema=${this._schema()} .computeLabel=${ElettrodomesticiCardEditor._label} .computeHelper=${ElettrodomesticiCardEditor._help} @value-changed=${(e: CustomEvent<{ value: Record<string, unknown> }>) => this._onForm(e)}></ha-form>

@@ -3,6 +3,7 @@ import { property, state } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { applianceSvg } from "./appliance-svg";
 import { cardSizeFor, effectiveColumns, fmt, fmtEur, fmtKwh, fmtWatt, gridTemplate, humModel, robotModel, summaryText, tileModel, type HumModel, type RobotModel, type TileModel } from "./card-logic";
+import { tintColor } from "./color-logic";
 import "./card-editor";
 import "./stats-dialog";
 import "./charts-dialog";
@@ -20,6 +21,8 @@ interface CardConfig {
   columns?: number;
   /** false = senza titolo e pulsanti (per inserire un elettrodomestico dentro un'altra scheda) */
   header?: boolean;
+  /** colore proprio della scheda: lo sfondo ne prende una tinta e il bordo lo segue, le tessere restano come sono; nome della tavolozza di Home Assistant o colore CSS */
+  color?: string;
 }
 
 type DialogTag = "elettro-stats-dialog" | "elettro-charts-dialog" | "elettro-robot-dialog" | "elettro-hum-charts-dialog";
@@ -42,6 +45,10 @@ export class ElettrodomesticiCard extends LitElement {
     this._config = { ...config };
     this._info = null;
     this._loadedAt = 0;
+    const tint = tintColor(config.color);
+    this.toggleAttribute("tinted", tint !== undefined);
+    if (tint !== undefined) this.style.setProperty("--el-tint", tint);
+    else this.style.removeProperty("--el-tint");
   }
   /** Altezza per la vista masonry (unità di 50 px): dipende da quante tessere ci sono e da quante colonne ci stanno. */
   getCardSize(): number {
@@ -261,6 +268,10 @@ export class ElettrodomesticiCard extends LitElement {
   static styles = css`
     :host { display: block; height: 100%; color: var(--primary-text-color, #212121); }
     ha-card { overflow: hidden; height: 100%; box-sizing: border-box; }
+    /* opzione color: la tinta si mescola allo sfondo della scheda del tema; le tessere in funzione o finite, che sono velature, tengono sotto lo sfondo normale della scheda */
+    :host([tinted]) ha-card { background: color-mix(in srgb, var(--el-tint) 30%, var(--ha-card-background, var(--card-background-color, #fff))); border: 1px solid color-mix(in srgb, var(--el-tint) 55%, transparent); }
+    :host([tinted]) .tile.run { background: linear-gradient(rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.1)), var(--card-background-color, #fff); }
+    :host([tinted]) .tile.done { background: linear-gradient(rgba(22, 163, 74, 0.1), rgba(22, 163, 74, 0.1)), var(--card-background-color, #fff); }
     .pad { height: 100%; box-sizing: border-box; overflow: auto; }
     .pad { padding: 14px 16px 16px; }
     .pad.compact { padding: 8px; }
@@ -319,4 +330,4 @@ window.customCards.push({
 });
 
 // eslint-disable-next-line no-console
-console.info("%c ELETTRODOMESTICI %c v0.6.1 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");
+console.info("%c ELETTRODOMESTICI %c v0.6.2 ", "color: white; background: #0f766e; font-weight: 700;", "color: #0f766e; background: white; font-weight: 700;");

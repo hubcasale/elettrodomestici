@@ -154,7 +154,7 @@ if (!customElements.get("ha-form")) customElements.define("ha-form", class exten
       if (i.dataset.v) { const set = new Set(v[n] || []); i.checked ? set.add(i.dataset.v) : set.delete(i.dataset.v); v[n] = [...set]; } else v[n] = i.type === "checkbox" ? i.checked : i.type === "number" ? Number(i.value) : i.value;
       this.dispatchEvent(new CustomEvent("value-changed", { detail: { value: v } })); })); } });
 const el = document.createElement("elettrodomestici-card");
-el.setConfig({type:"custom:elettrodomestici-card", header: params.get("header")==="0"?false:undefined, columns: params.get("columns")?Number(params.get("columns")):undefined}); el.hass = hass;
+el.setConfig({type:"custom:elettrodomestici-card", header: params.get("header")==="0"?false:undefined, columns: params.get("columns")?Number(params.get("columns")):undefined, color: params.get("colore")||undefined}); el.hass = hass;
 document.getElementById("root").appendChild(el);
 if (params.get("editor") === "1") { const ed = document.createElement("elettrodomestici-card-editor"); ed.hass = hass; ed.setConfig({ type: "custom:elettrodomestici-card", title: "Elettrodomestici", columns: 3 }); ed.style.cssText = "display:block;max-width:520px;margin:16px"; ed.addEventListener("config-changed", (e) => console.log("config-changed", JSON.stringify(e.detail.config))); document.body.appendChild(ed); document.getElementById("root").style.display = "none"; }
 if (params.get("w")) document.getElementById("root").style.width = params.get("w") + "px";

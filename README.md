@@ -35,11 +35,13 @@ title: Elettrodomestici
 columns: 2                       # colonne delle tessere (1-8); 0 o assente = automatico
 appliances: [lavatrice, forno]   # solo questi (id); senza l'elenco si vedono tutti
 header: false                    # senza titolo e riepilogo (per inserire la scheda dentro un'altra)
+color: orange                    # colore proprio della scheda: sfondo tinto e bordo, tessere come sono (nome di Home Assistant o colore CSS)
 grid_options: { rows: 4 }        # vista a sezioni: righe e colonne si regolano dalla scheda «Layout» (qui un esempio)
 ```
 
 **Griglia e comportamento nella dashboard**
 
+* `color` (dall'editor: «Colore della scheda») dà alla scheda un colore proprio, come un blocco colorato della plancia: lo sfondo ne prende una tinta e il bordo lo segue, le tessere restano come le disegna il tema. Vale un nome della tavolozza di Home Assistant (`orange`, `blue`…) oppure, nello YAML, un colore CSS (`#ff9800`).
 * `columns` è il **massimo** di colonne: se la scheda è stretta (una sezione piccola, il telefono) si riducono da sole, così le tessere non diventano mai più strette di circa 260 px.
 * Vista **a sezioni**: la scheda occupa per default tutta la larghezza della sezione (12 colonne) e l'altezza che serve (`rows: auto`); con un numero fisso di righe il contenuto scorre dentro la scheda. Dimensioni minime 3 colonne × 2 righe; si cambiano dal pannello «Layout» o con `grid_options`.
 * Vista **masonry**: l'altezza si stima da quante tessere ci sono e da quante colonne ci stanno.
